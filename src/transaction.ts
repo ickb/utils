@@ -1,47 +1,6 @@
 import { ccc, mol } from "@ckb-ccc/core";
 import { getHeader, type HeaderKey } from "./utils.js";
-
-/**
- * Interface representing the full configuration needed for interacting with a Script
- */
-export interface ScriptDeps {
-  /**
-   * The script for which additional information is being provided.
-   * @type {ccc.Script}
-   */
-  script: ccc.Script;
-
-  /**
-   * An array of cell dependencies associated with the script.
-   * @type {ccc.CellDep[]}
-   */
-  cellDeps: ccc.CellDep[];
-}
-
-/**
- * Interface representing a handler for User Defined Tokens (UDTs).
- * This interface extends the ScriptDeps interface, meaning it also includes
- * the properties defined in ScriptDeps: `script` and `cellDeps`.
- */
-export interface UdtHandler extends ScriptDeps {
-  /**
-   * Asynchronously retrieves the balance of UDT inputs for a given transaction.
-   * @param {ccc.Client} client - The client used to interact with the blockchain.
-   * @param {SmartTransaction} tx - The transaction for which to retrieve the UDT input balance.
-   * @returns {Promise<ccc.FixedPoint>} A promise that resolves to the balance of UDT inputs.
-   */
-  getInputsUdtBalance?: (
-    client: ccc.Client,
-    tx: SmartTransaction,
-  ) => Promise<ccc.FixedPoint>;
-
-  /**
-   * Retrieves the balance of UDT outputs for a given transaction.
-   * @param {SmartTransaction} tx - The transaction for which to retrieve the UDT output balance.
-   * @returns {ccc.FixedPoint} The balance of UDT outputs.
-   */
-  getOutputsUdtBalance?: (tx: SmartTransaction) => ccc.FixedPoint;
-}
+import type { UdtHandler } from "./udt.js";
 
 /**
  * Class representing a smart transaction that extends the base ccc.Transaction.

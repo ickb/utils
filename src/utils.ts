@@ -1,6 +1,23 @@
 import { ccc } from "@ckb-ccc/core";
 
 /**
+ * Interface representing the full configuration needed for interacting with a Script
+ */
+export interface ScriptDeps {
+  /**
+   * The script for which additional information is being provided.
+   * @type {ccc.Script}
+   */
+  script: ccc.Script;
+
+  /**
+   * An array of cell dependencies associated with the script.
+   * @type {ccc.CellDep[]}
+   */
+  cellDeps: ccc.CellDep[];
+}
+
+/**
  * Represents a key for retrieving a block header.
  *
  * The `HeaderKey` can be one of three shapes:
