@@ -67,12 +67,27 @@ export class SmartTransaction extends ccc.Transaction {
     for (const { script: udt } of this.udtHandlers.values()) {
       const addedCount = await this.completeInputsByUdt(signer, udt);
       if (addedCount > 0) {
-        throw new Error("UDT Handlers did not produce a balanced Transaction");
+        throw Error("UDT Handlers did not produce a balanced Transaction");
       }
     }
 
     // Add capacity change cells
-    return super.completeFee(...args);
+    const res = super.completeFee(...args);
+
+    // Check that, if NervosDAO cells are included, then there are at most 64 output cells, see:
+    // https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0023-dao-deposit-withdraw/0023-dao-deposit-withdraw.md#gotchas
+    const { hashType, codeHash } = await signer.client.getKnownScript(
+      ccc.KnownScript.NervosDao,
+    );
+    const dao = ccc.Script.from({ codeHash, hashType, args: "0x" });
+    const isDaoTx =
+      this.inputs.some((c) => c.cellOutput?.type?.eq(dao)) ||
+      this.outputs.some((c) => c.type?.eq(dao));
+    if (isDaoTx && this.outputs.length > 64) {
+      throw Error("More than 64 output cells in a NervosDAO transaction");
+    }
+
+    return res;
   }
 
   /**
@@ -126,7 +141,7 @@ export class SmartTransaction extends ccc.Transaction {
 
         // Input is not well defined
         if (!cellOutput || !outputData) {
-          throw new Error("Unable to complete input");
+          throw Error("Unable to complete input");
         }
         const cell = ccc.Cell.from({
           outPoint,
@@ -258,7 +273,7 @@ export class SmartTransaction extends ccc.Transaction {
           // Keep old header
           header = h;
         } else {
-          throw new Error("Found two hashes for the same header");
+          throw Error("Found two hashes for the same header");
         }
       }
 
@@ -295,13 +310,13 @@ export class SmartTransaction extends ccc.Transaction {
         txHash: headerKey.type === "txHash" ? headerKey.value : undefined,
       });
       if (headerDepsLength !== this.headerDeps.length) {
-        throw new Error("Header was not present in HeaderDeps");
+        throw Error("Header was not present in HeaderDeps");
       }
     } else {
       // Double check that header is present in HeaderDeps
       const { hash } = header;
       if (!this.headerDeps.some((h) => h === hash)) {
-        throw new Error("Header not found in HeaderDeps");
+        throw Error("Header not found in HeaderDeps");
       }
     }
 
