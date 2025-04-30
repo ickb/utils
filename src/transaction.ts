@@ -455,14 +455,68 @@ export interface TransactionHeader {
 }
 
 /**
+ * Retrieves the parameters of a SmartTransaction.
+ *
+ * @param tx - The SmartTransaction instance from which to retrieve parameters.
+ * @param shouldClone - A boolean indicating whether to clone the transaction before retrieving parameters.
+ * @returns An array of parameters corresponding to the SmartTransaction constructor.
+ */
+function parametersOf(
+  tx: SmartTransaction,
+  shouldClone: boolean,
+): ConstructorParameters<typeof SmartTransaction> {
+  if (shouldClone) {
+    const inputs = [...tx.inputs];
+    tx = tx.clone();
+    tx.inputs = inputs;
+  }
+  return [
+    tx.version,
+    tx.cellDeps,
+    tx.headerDeps,
+    tx.inputs,
+    tx.outputs,
+    tx.outputsData,
+    tx.witnesses,
+    tx.udtHandlers,
+    tx.headers,
+  ];
+}
+
+/**
  * Class representing a restricted transaction that extends SmartTransaction.
  * This class overrides certain methods to modify the behavior of the transaction,
  * particularly in how inputs are handled and cloned:
  *
  * - It will never call client.findCell for additional cells, for example when using completeFee.
  * - It will always retain inputs metadata when cloning, so it will not refetch InputCells.
+ *
+ * Note on Use: Prefer SmartTransaction; use this class only to avoid client requests
+ * and failing fast when trying out many transaction variations.
+ *
+ * Example:
+ * ```typescript
+ * await new RestrictedTransaction(tx).completeFeeBy(signer, feeRate);
+ * ```
  */
 export class RestrictedTransaction extends SmartTransaction {
+  /**
+   * Creates an instance of RestrictedTransaction from a SmartTransaction.
+   * @param tx - The SmartTransaction instance to create the RestrictedTransaction from.
+   */
+  constructor(tx: SmartTransaction, shouldClone = true) {
+    super(...parametersOf(tx, shouldClone));
+  }
+
+  /**
+   * Creates a clone of the current RestrictedTransaction instance.
+   * @returns A new instance of RestrictedTransaction with the same properties.
+   * The inputs metadata is preserved to avoid refetching that data.
+   */
+  override clone(): RestrictedTransaction {
+    return new RestrictedTransaction(this, true);
+  }
+
   /**
    * It does not complete the inputs for the transaction.
    * This method is overridden to disable fetching additional cells.
@@ -487,43 +541,14 @@ export class RestrictedTransaction extends SmartTransaction {
     };
   }
 
-  /**
-   * Creates a clone of the current RestrictedTransaction instance.
-   * @returns A new instance of RestrictedTransaction with the same properties.
-   * The inputs metadata is preserved to avoid refetching that data.
-   */
-  override clone(): RestrictedTransaction {
-    const result = super.clone();
-    result.inputs = [...this.inputs];
-    return new RestrictedTransaction(result);
-  }
-
   // Reimplement the rest of transformations where a new instance is created.
-
-  /**
-   * Creates an instance of RestrictedTransaction from a SmartTransaction.
-   * @param tx - The SmartTransaction instance to create the RestrictedTransaction from.
-   */
-  constructor(tx: SmartTransaction) {
-    super(
-      tx.version,
-      tx.cellDeps,
-      tx.headerDeps,
-      tx.inputs,
-      tx.outputs,
-      tx.outputsData,
-      tx.witnesses,
-      tx.udtHandlers,
-      tx.headers,
-    );
-  }
 
   /**
    * Creates a default instance of RestrictedTransaction.
    * @returns A new instance of RestrictedTransaction with default values.
    */
   static override default(): RestrictedTransaction {
-    return new RestrictedTransaction(super.default());
+    return new RestrictedTransaction(super.default(), false);
   }
 
   /**
@@ -534,7 +559,7 @@ export class RestrictedTransaction extends SmartTransaction {
   static override fromLumosSkeleton(
     skeleton: ccc.LumosTransactionSkeletonType,
   ): RestrictedTransaction {
-    return new RestrictedTransaction(super.fromLumosSkeleton(skeleton));
+    return new RestrictedTransaction(super.fromLumosSkeleton(skeleton), false);
   }
 
   /**
@@ -543,6 +568,6 @@ export class RestrictedTransaction extends SmartTransaction {
    * @returns A new instance of RestrictedTransaction.
    */
   static override from(txLike: SmartTransactionLike): RestrictedTransaction {
-    return new RestrictedTransaction(SmartTransaction.from(txLike));
+    return new RestrictedTransaction(SmartTransaction.from(txLike), false);
   }
 }
