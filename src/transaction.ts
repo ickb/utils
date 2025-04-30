@@ -438,3 +438,96 @@ export interface TransactionHeader {
    */
   txHash?: ccc.HexLike;
 }
+
+/**
+ * Class representing a restricted transaction that extends SmartTransaction.
+ * This class overrides certain methods to modify the behavior of the transaction,
+ * particularly in how inputs are handled and cloned:
+ *
+ * - It will never call client.findCell for additional cells, for example when using completeFee.
+ * - It will always retain inputs metadata when cloning, so it will not refetch InputCells.
+ */
+export class RestrictedTransaction extends SmartTransaction {
+  /**
+   * It does not complete the inputs for the transaction.
+   * This method is overridden to disable fetching additional cells.
+   * @param _0 - Unused parameter.
+   * @param _1 - Unused parameter.
+   * @param _2 - Unused parameter.
+   * @param init - The initial value to accumulate.
+   * @returns A promise that resolves to an object containing the count of added inputs
+   * and the accumulated value.
+   */
+  // eslint-disable-next-line @typescript-eslint/require-await
+  override async completeInputs<T>(
+    _0: never,
+    _1: never,
+    _2: never,
+    init: T,
+  ): Promise<{ addedCount: number; accumulated?: T }> {
+    // Disable completeInputs, so it will not fetch additional cells
+    return {
+      addedCount: 0,
+      accumulated: init,
+    };
+  }
+
+  /**
+   * Creates a clone of the current RestrictedTransaction instance.
+   * @returns A new instance of RestrictedTransaction with the same properties.
+   * The inputs metadata is preserved to avoid refetching that data.
+   */
+  override clone(): RestrictedTransaction {
+    const result = super.clone();
+    result.inputs = [...this.inputs];
+    return new RestrictedTransaction(result);
+  }
+
+  // Reimplement the rest of transformations where a new instance is created.
+
+  /**
+   * Creates an instance of RestrictedTransaction from a SmartTransaction.
+   * @param tx - The SmartTransaction instance to create the RestrictedTransaction from.
+   */
+  constructor(tx: SmartTransaction) {
+    super(
+      tx.version,
+      tx.cellDeps,
+      tx.headerDeps,
+      tx.inputs,
+      tx.outputs,
+      tx.outputsData,
+      tx.witnesses,
+      tx.udtHandlers,
+      tx.headers,
+    );
+  }
+
+  /**
+   * Creates a default instance of RestrictedTransaction.
+   * @returns A new instance of RestrictedTransaction with default values.
+   */
+  static override default(): RestrictedTransaction {
+    return new RestrictedTransaction(super.default());
+  }
+
+  /**
+   * Creates a RestrictedTransaction from a Lumos transaction skeleton.
+   * @param skeleton - The LumosTransactionSkeletonType to create the RestrictedTransaction from.
+   * @returns A new instance of RestrictedTransaction.
+   */
+  static override fromLumosSkeleton(
+    skeleton: ccc.LumosTransactionSkeletonType,
+  ): RestrictedTransaction {
+    return new RestrictedTransaction(super.fromLumosSkeleton(skeleton));
+  }
+
+  /**
+   * Creates a RestrictedTransaction from a transaction-like object.
+   * @param txLike - The transaction-like object to create the RestrictedTransaction from.
+   * @returns A new instance of RestrictedTransaction.
+   */
+  static override from(txLike: SmartTransactionLike): RestrictedTransaction {
+    return new RestrictedTransaction(SmartTransaction.from(txLike));
+  }
+}
