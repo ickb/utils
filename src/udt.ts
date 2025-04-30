@@ -172,7 +172,7 @@ export class UdtManager implements UdtHandler {
           cell,
           ckbValue: cell.cellOutput.capacity,
           udtValue: ccc.udtBalanceFrom(cell.outputData),
-          [isUDTSymbol]: true,
+          [isUdtSymbol]: true,
         };
       }
     }
@@ -184,16 +184,16 @@ export class UdtManager implements UdtHandler {
  */
 export interface UdtCell extends ValueComponents {
   /**
-   * The underlying cell associated with the Capacity Cell.
+   * The underlying cell associated with the UDT Cell.
    */
   cell: ccc.Cell;
 
   /**
-   * A symbol property indicating that this cell is a Capacity Cell.
+   * A symbol property indicating that this cell is a UDT Cell.
    * This property is always set to true.
    */
-  [isUDTSymbol]: true;
+  [isUdtSymbol]: true;
 }
 
-// Symbol to represent the isUDT property of Capacity Cells
-const isUDTSymbol = Symbol("isUDT");
+// Symbol to represent the isUdt property of UDT Cells
+const isUdtSymbol = Symbol("isUdt");
