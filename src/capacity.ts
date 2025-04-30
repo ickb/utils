@@ -39,7 +39,7 @@ export class CapacityManager {
    */
   static async *findCapacities(
     client: ccc.Client,
-    locks: ccc.ScriptLike[],
+    locks: ccc.Script[],
     options?: {
       onChain?: boolean;
     },
@@ -50,8 +50,8 @@ export class CapacityManager {
           script: lock,
           scriptType: "lock",
           filter: {
-            scriptLenRange: [0, 1] as [ccc.NumLike, ccc.NumLike],
-            outputDataLenRange: [0, 1] as [ccc.NumLike, ccc.NumLike],
+            scriptLenRange: [0n, 1n] as [ccc.Num, ccc.Num],
+            outputDataLenRange: [0n, 1n] as [ccc.Num, ccc.Num],
           },
           scriptSearchMode: "exact",
           withData: true,

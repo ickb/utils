@@ -24,7 +24,7 @@ export interface ScriptDeps {
  *
  * 1. For hash type:
  *    - `type`: Indicates that the header key is a block hash type, which is "hash".
- *    - `value`: The value associated with the header key, represented as `ccc.HexLike`.
+ *    - `value`: The value associated with the header key, represented as `ccc.Hex`.
  *
  * 2. For number type:
  *    - `type`: Indicates that the header key is a block number type, which is "number".
@@ -32,12 +32,12 @@ export interface ScriptDeps {
  *
  * 3. For transaction hash type:
  *    - `type`: Indicates that the header key is a transaction hash type, which is "txHash".
- *    - `value`: The value associated with the header key, represented as `ccc.HexLike`.
+ *    - `value`: The value associated with the header key, represented as `ccc.Hex`.
  */
 export type HeaderKey =
   | {
       type: "hash";
-      value: ccc.HexLike;
+      value: ccc.Hex;
     }
   | {
       type: "number";
@@ -45,7 +45,7 @@ export type HeaderKey =
     }
   | {
       type: "txHash";
-      value: ccc.HexLike;
+      value: ccc.Hex;
     };
 
 /**

@@ -137,7 +137,7 @@ export class UdtManager implements UdtHandler {
    */
   async *findUdts(
     client: ccc.Client,
-    locks: ccc.ScriptLike[],
+    locks: ccc.Script[],
     options?: {
       onChain?: boolean;
     },

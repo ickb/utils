@@ -448,10 +448,10 @@ export interface TransactionHeader {
   header: ccc.ClientBlockHeader;
 
   /**
-   * An optional transaction hash associated with the transaction, represented as `ccc.HexLike`.
+   * An optional transaction hash associated with the transaction, represented as `ccc.Hex`.
    * This property may be undefined if the transaction hash is not applicable.
    */
-  txHash?: ccc.HexLike;
+  txHash?: ccc.Hex;
 }
 
 /**
