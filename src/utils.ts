@@ -79,34 +79,6 @@ export async function getHeader(
 }
 
 /**
- * Partitions an array of items into two groups based on a reference epoch.
- *
- * @param tt - The array of items to partition.
- * @param get - A function that retrieves the epoch from an item.
- * @param reference - The reference epoch to compare against.
- * @returns An object containing two arrays: `before` and `after`.
- */
-export function epochPartition<T>(
-  tt: readonly T[],
-  get: (t: T) => ccc.Epoch,
-  reference: ccc.Epoch,
-): {
-  after: T[];
-  before: T[];
-} {
-  const before: T[] = [];
-  const after: T[] = [];
-  for (const t of tt) {
-    if (epochCompare(get(t), reference) <= 0) {
-      before.push(t);
-    } else {
-      after.push(t);
-    }
-  }
-  return { after, before };
-}
-
-/**
  * Compares two epochs and returns an integer indicating their order.
  *
  * @param a - The first epoch to compare.

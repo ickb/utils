@@ -38,8 +38,8 @@ export class UdtManager implements UdtHandler {
    * @param cellDeps - An array of cell dependencies.
    */
   constructor(
-    public script: ccc.Script,
-    public cellDeps: ccc.CellDep[],
+    public readonly script: ccc.Script,
+    public readonly cellDeps: ccc.CellDep[],
   ) {}
 
   /**

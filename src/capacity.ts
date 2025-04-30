@@ -8,7 +8,7 @@ const isCapacitySymbol = Symbol("isCapacity");
  * Class for managing Capacity cells.
  */
 export class CapacityManager {
-  public readonly isCapacitySymbol = isCapacitySymbol;
+  readonly isCapacitySymbol = isCapacitySymbol;
 
   /**
    * Checks if a cell is a Capacity Cell.
