@@ -120,6 +120,10 @@ export class UdtManager implements UdtHandler {
    * @param udts - An array of UDT cells to add.
    */
   addUdts(tx: SmartTransaction, udts: UdtCell[]): void {
+    if (udts.length === 0) {
+      return;
+    }
+
     tx.addCellDeps(this.cellDeps);
     tx.addUdtHandlers(this);
 
