@@ -1,5 +1,6 @@
-import type { ccc } from "@ckb-ccc/core";
+import { ccc } from "@ckb-ccc/core";
 import type { SmartTransaction } from "./transaction.js";
+import type { ValueComponents } from "./utils.js";
 
 // Symbol to represent the isCapacity property of Capacity Cells
 const isCapacitySymbol = Symbol("isCapacity");
@@ -69,6 +70,8 @@ export class CapacityManager {
 
         yield {
           cell,
+          ckbValue: cell.cellOutput.capacity,
+          udtValue: ccc.Zero,
           [isCapacitySymbol]: true,
         };
       }
@@ -79,7 +82,7 @@ export class CapacityManager {
 /**
  * Interface representing a Capacity Cell.
  */
-export interface CapacityCell {
+export interface CapacityCell extends ValueComponents {
   /**
    * The underlying cell associated with the Capacity Cell.
    */

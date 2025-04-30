@@ -1,5 +1,5 @@
 import { ccc, Cell } from "@ckb-ccc/core";
-import type { ScriptDeps } from "./utils.js";
+import type { ScriptDeps, ValueComponents } from "./utils.js";
 import type { SmartTransaction } from "./transaction.js";
 
 /**
@@ -168,28 +168,32 @@ export class UdtManager implements UdtHandler {
           continue;
         }
 
-        yield udtCellFrom(cell);
+        yield {
+          cell,
+          ckbValue: cell.cellOutput.capacity,
+          udtValue: ccc.udtBalanceFrom(cell.outputData),
+          [isUDTSymbol]: true,
+        };
       }
     }
   }
 }
 
 /**
- * Interface representing a UDT cell.
+ * Interface representing a UdtCell Cell.
  */
-export interface UdtCell {
+export interface UdtCell extends ValueComponents {
+  /**
+   * The underlying cell associated with the Capacity Cell.
+   */
   cell: ccc.Cell;
-  udtValue: ccc.FixedPoint;
+
+  /**
+   * A symbol property indicating that this cell is a Capacity Cell.
+   * This property is always set to true.
+   */
+  [isUDTSymbol]: true;
 }
 
-/**
- * Converts a cell to a UDT cell.
- * @param cell - The cell to convert.
- * @returns {UdtCell} The converted UDT cell.
- */
-export function udtCellFrom(cell: ccc.Cell): UdtCell {
-  return {
-    cell,
-    udtValue: ccc.udtBalanceFrom(cell.outputData),
-  };
-}
+// Symbol to represent the isUDT property of Capacity Cells
+const isUDTSymbol = Symbol("isUDT");

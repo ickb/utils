@@ -1,6 +1,17 @@
 import { ccc } from "@ckb-ccc/core";
 
 /**
+ * Represents the components of a value, including CKB and UDT amounts.
+ */
+export interface ValueComponents {
+  /** The amount in CKB as a `ccc.Num`. */
+  ckbValue: ccc.Num;
+
+  /** The amount in UDT as a `ccc.Num`. */
+  udtValue: ccc.Num;
+}
+
+/**
  * Interface representing the full configuration needed for interacting with a Script
  */
 export interface ScriptDeps {
