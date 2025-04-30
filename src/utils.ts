@@ -222,52 +222,52 @@ export function binarySearch(n: number, f: (i: number) => boolean): number {
 }
 
 /**
- * Returns the maximum value from a list of numbers.
+ * Performs asynchronously a binary search to find the smallest index `i` in the range [0, n)
+ * such that the function `f(i)` returns true. It is assumed that for the range
+ * [0, n), if `f(i)` is true, then `f(i+1)` is also true. This means that there
+ * is a prefix of the input range where `f` is false, followed by a suffix where
+ * `f` is true. If no such index exists, the function returns `n`.
  *
- * @param numbers - A variable number of values to compare.
- * @returns The maximum value among the provided numbers.
+ * The function `f` is only called for indices in the range [0, n).
  *
- * @example
- * // Example usage:
- * const maximum = max(1, 5, 3, 9, 2); // Returns 9
+ * @param n - The upper bound of the search range (exclusive).
+ * @param f - An async function that takes an index `i` and returns a boolean value.
+ * @returns The smallest index `i` such that `f(i)` is true, or `n` if no such index exists.
+ *
+ * @credits go standard library authors, this implementation is just a translation or that code:
+ * https://go.dev/src/sort/search.go *
  */
-export function max<T>(...numbers: T[]): T {
-  return numbers.reduce((a, b) => (a > b ? a : b));
+export async function asyncBinarySearch(
+  n: number,
+  f: (i: number) => Promise<boolean>,
+): Promise<number> {
+  // Define f(-1) == false and f(n) == true.
+  // Invariant: f(i-1) == false, f(j) == true.
+  let [i, j] = [0, n];
+  while (i < j) {
+    const h = Math.trunc((i + j) / 2);
+    // i ≤ h < j
+    if (!(await f(h))) {
+      i = h + 1; // preserves f(i-1) == false
+    } else {
+      j = h; // preserves f(j) == true
+    }
+  }
+  // i == j, f(i-1) == false, and f(j) (= f(i)) == true  =>  answer is i.
+  return i;
 }
 
 /**
- * Returns the minimum value from a list of numbers.
+ * Converts an asynchronous generator into an array.
  *
- * @param numbers - A variable number of values to compare.
- * @returns The minimum value among the provided numbers.
+ * This function takes an `AsyncGenerator<T>` as input and returns a promise that resolves
+ * to an array containing all the elements yielded by the generator.
  *
- * @example
- * // Example usage:
- * const minimum = min(1, 5, 3, 9, 2); // Returns 1
- */
-export function min<T>(...numbers: T[]): T {
-  return numbers.reduce((a, b) => (a < b ? a : b));
-}
-
-/**
- * Represents an asynchronous iterable type that can be either a synchronous iterable
- * or an asynchronous generator.
- *
- * @template T - The type of elements in the iterable.
- */
-export type AsyncIterable<T> = Iterable<T> | AsyncGenerator<T>;
-
-/**
- * Converts an asynchronous iterable into an array.
- *
- * This function takes an `AsyncIterable` as input and returns a promise that resolves
- * to an array containing all the elements yielded by the iterable.
- *
- * @template T - The type of elements in the input iterable.
- * @param {AsyncIterable<T>} inputs - The asynchronous iterable to convert into an array.
+ * @template T - The type of elements in the input generator.
+ * @param {AsyncGenerator<T>} inputs - The asynchronous generator to convert into an array.
  * @returns {Promise<T[]>} A promise that resolves to an array of elements.
  */
-export async function arrayFrom<T>(inputs: AsyncIterable<T>): Promise<T[]> {
+export async function collect<T>(inputs: AsyncGenerator<T>): Promise<T[]> {
   const res = [];
   for await (const i of inputs) {
     res.push(i);
