@@ -4,11 +4,31 @@ import { ccc } from "@ckb-ccc/core";
  * Represents the components of a value, including CKB and UDT amounts.
  */
 export interface ValueComponents {
-  /** The amount in CKB as a `ccc.Num`. */
-  ckbValue: ccc.Num;
+  /** The CKB amount as a `ccc.FixedPoint`. */
+  ckbValue: ccc.FixedPoint;
 
-  /** The amount in UDT as a `ccc.Num`. */
-  udtValue: ccc.Num;
+  /** The UDT amount as a `ccc.FixedPoint`. */
+  udtValue: ccc.FixedPoint;
+}
+
+/**
+ * Represents the exchange ratio between CKB and a UDT.
+ * This interface is usually used in conjunction with `ValueComponents` to understand the values of entities.
+ *
+ * For example, if `v` implements `ValueComponents` and `r` is an `ExchangeRatio`:
+ * - The absolute value of `v` is calculated as:
+ *   `v.ckbValue * r.ckbScale + v.udtValue * r.udtScale`
+ * - The equivalent CKB value of `v` is calculated as:
+ *   `v.ckbValue + (v.udtValue * r.udtScale + r.ckbScale - 1n) / r.ckbScale`
+ * - The equivalent UDT value of `v` is calculated as:
+ *   `v.udtValue + (v.ckbValue * r.ckbScale + r.udtScale - 1n) / r.udtScale`
+ */
+export interface ExchangeRatio {
+  /** The CKB scale as a `ccc.Num`. */
+  ckbScale: ccc.Num;
+
+  /** The UDT scale as a `ccc.Num`. */
+  udtScale: ccc.Num;
 }
 
 /**

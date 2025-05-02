@@ -1,4 +1,4 @@
-import { ccc, Cell } from "@ckb-ccc/core";
+import { ccc } from "@ckb-ccc/core";
 import type { ScriptDeps, ValueComponents } from "./utils.js";
 import type { SmartTransaction } from "./transaction.js";
 
@@ -87,7 +87,7 @@ export class UdtManager implements UdtHandler {
         }
 
         // Input is not an UDT
-        const cell = new Cell(outPoint, cellOutput, outputData);
+        const cell = new ccc.Cell(outPoint, cellOutput, outputData);
         if (!this.isUdt(cell)) {
           return acc;
         }
