@@ -198,7 +198,7 @@ export function shuffle<T>(array: T[]): T[] {
  * @param f - A function that takes an index `i` and returns a boolean value.
  * @returns The smallest index `i` such that `f(i)` is true, or `n` if no such index exists.
  *
- * @credits go standard library authors, this implementation is just a translation or that code:
+ * @credits go standard library authors, this implementation is just a translation:
  * https://go.dev/src/sort/search.go
  *
  * @example

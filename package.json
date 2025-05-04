@@ -1,6 +1,6 @@
 {
   "name": "@ickb/utils",
-  "version": "1000.0.43",
+  "version": "1000.0.45",
   "description": "NervosDAO utilities built on top of CCC",
   "author": "phroi",
   "license": "MIT",
@@ -30,8 +30,8 @@
     "provenance": true
   },
   "devDependencies": {
-    "@eslint/js": "^9.25.1",
-    "eslint": "^9.25.1",
+    "@eslint/js": "^9.26.0",
+    "eslint": "^9.26.0",
     "prettier": "^3.5.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.31.1"
