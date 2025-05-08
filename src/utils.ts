@@ -277,3 +277,42 @@ export async function collect<T>(inputs: AsyncGenerator<T>): Promise<T[]> {
   }
   return res;
 }
+
+/**
+ * A buffered generator that tries to maintain a fixed-size buffer of values.
+ */
+export class BufferedGenerator<T> {
+  public buffer: T[] = [];
+
+  /**
+   * Creates an instance of Buffered.
+   * @param generator - The generator to buffer values from.
+   * @param maxSize - The maximum size of the buffer.
+   */
+  constructor(
+    public generator: Generator<T, void, void>,
+    public maxSize: number,
+  ) {
+    // Try to populate the buffer
+    for (const value of generator) {
+      this.buffer.push(value);
+      if (this.buffer.length >= this.maxSize) {
+        break;
+      }
+    }
+  }
+
+  /**
+   * Advances the buffer by the specified number of steps.
+   * @param n - The number of steps to advance the buffer.
+   */
+  public next(n: number): void {
+    for (let i = 0; i < n; i++) {
+      this.buffer.shift();
+      const { value, done } = this.generator.next();
+      if (!done) {
+        this.buffer.push(value);
+      }
+    }
+  }
+}
