@@ -43,13 +43,17 @@ export class UdtManager implements UdtHandler {
   ) {}
 
   /**
-   * Creates an instance of UdtManager from script dependencies and a DAO manager.
+   * Creates an instance of UdtManager from script dependencies.
    * @param deps - The script dependencies.
+   * @param deps.udt - The script dependencies for UDT.
    * @returns An instance of UdtManager.
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  static fromDeps(deps: ScriptDeps, ..._: never[]): UdtManager {
-    return new UdtManager(deps.script, deps.cellDeps);
+  static fromDeps(
+    { udt }: { udt: ScriptDeps },
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    ..._: never[]
+  ): UdtManager {
+    return new UdtManager(udt.script, udt.cellDeps);
   }
 
   /**
