@@ -316,3 +316,66 @@ export class BufferedGenerator<T> {
     }
   }
 }
+
+/**
+ * Returns the maximum value from a list of values.
+ *
+ * This function compares a starting value against additional values and returns the largest one.
+ *
+ * @param res - The initial value used as a starting point for comparisons.
+ * @param rest - A variable number of additional values to compare.
+ * @returns The maximum value among the provided values.
+ *
+ * @example
+ * // Example usage:
+ * const maximum = max(1, 5, 3, 9, 2); // Returns 9
+ */
+export function max<T>(res: T, ...rest: T[]): T {
+  for (const v of rest) {
+    if (v > res) {
+      res = v;
+    }
+  }
+  return res;
+}
+
+/**
+ * Returns the minimum value from a list of values.
+ *
+ * This function compares a starting value against additional values and returns the smallest one.
+ *
+ * @param res - The initial value used as a starting point for comparisons.
+ * @param rest - A variable number of additional values to compare.
+ * @returns The minimum value among the provided values.
+ *
+ * @example
+ * // Example usage:
+ * const minimum = min(1, 5, 3, 9, 2); // Returns 1
+ */
+export function min<T>(res: T, ...rest: T[]): T {
+  for (const v of rest) {
+    if (v < res) {
+      res = v;
+    }
+  }
+  return res;
+}
+
+/**
+ * Calculates the greatest common divisor (GCD) of multiple `bigint` numbers.
+ *
+ * This function extends the Euclidean algorithm to an array of values. It calculates the GCD
+ * by iteratively computing the GCD of the current result and each subsequent number.
+ *
+ * @param res - The initial `bigint` value to start the GCD calculation.
+ * @param rest - An array of additional `bigint` values whose GCD will be computed with `res`.
+ * @returns The greatest common divisor of all the provided numbers as a `bigint`.
+ */
+export function gcd(res: bigint, ...rest: bigint[]): bigint {
+  for (let v of rest) {
+    while (v !== 0n) {
+      [res, v] = [v, res % v];
+    }
+  }
+  return res;
+}
