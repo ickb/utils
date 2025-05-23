@@ -362,6 +362,48 @@ export function min<T>(res: T, ...rest: T[]): T {
 }
 
 /**
+ * Returns the sum of a list of values.
+ *
+ * This function adds together an initial value with a variable number of additional values.
+ * The operation is performed in a pairwise reduction manner to improve performance by reducing
+ * the number of allocations, while achieving on numbers better numerical stability than naive summation.
+ * It supports numbers (the main target) and bigints.
+ *
+ * @param res - The initial value used as the starting point for the sum.
+ * @param rest - A variable number of additional values to be added.
+ * @returns The sum of all provided values.
+ *
+ * @example
+ * // Example usage with numbers:
+ * const result = sum(1, 5, 3, 9, 2); // Returns 20
+ *
+ * @example
+ * // Example usage with bigints:
+ * const resultBigInt = sum(1n, 5n, 3n, 9n, 2n); // Returns 20n
+ */
+export function sum(res: number, ...rest: number[]): number;
+export function sum(res: bigint, ...rest: bigint[]): bigint;
+export function sum<T>(res: T, ...rest: T[]): T {
+  const elements = [res, ...rest] as number[];
+  let n = elements.length;
+
+  // Perform pairwise reduction until a single value remains.
+  while (n > 1) {
+    const half = n >> 1;
+    const isOdd = n % 2;
+    // If there is an odd element, elements[half] is already in the correct place.
+    for (let i = 0; i < half; i++) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      elements[i]! += elements[n - i - 1]!;
+    }
+    n = half + isOdd;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  return elements[0]! as T;
+}
+
+/**
  * Calculates the greatest common divisor (GCD) of multiple `bigint` numbers.
  *
  * This function extends the Euclidean algorithm to an array of values. It calculates the GCD
