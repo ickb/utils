@@ -11,59 +11,55 @@ const isCapacitySymbol = Symbol("isCapacity");
  * The CapacityManager class is used for managing Capacity cells.
  *
  * @remarks
- * This class provides methods to check if a cell qualifies as a Capacity Cell,
- * add Capacity cells to a transaction, and find Capacity cells based on the provided scripts and options.
- * It supports configuring the criteria for a cell to qualify based on the cell's output data length and
- * an additional predicate callback function.
+ * This class provides methods to:
+ *   - Check if a cell qualifies as a Capacity Cell.
+ *   - Add Capacity cells to a transaction.
+ *   - Find Capacity cells based on the provided scripts and options.
+ *
+ * The criteria for a cell to qualify may be configured based on the cell's output data length
+ * and an additional optional predicate function.
  */
 export class CapacityManager {
   /**
-   * Creates an instance of a CapacityManager.
+   * Creates an instance of CapacityManager.
    *
    * @param outputDataLenRange - A tuple specifying the inclusive lower bound and exclusive upper bound of the output data length.
-   *                             When defined, only cells with outputData length within this range are considered.
-   *                             For example, [0n, 1n] indicates no outputData.
-   * @param isCapacityFunc - A function that defines additional checks on the given cell to determine if it qualifies as a Capacity Cell.
-   *                         This function is called internally when the outputData length criteria are met.
+   *                             When defined, only cells whose output data length falls within this range are considered.
+   *                             For example, [0n, 1n] indicates cells with no output data.
    */
   constructor(
     public readonly outputDataLenRange: [ccc.Num, ccc.Num] | undefined,
-    public readonly isCapacityFunc: (cell: ccc.Cell) => boolean,
   ) {}
 
   /**
    * Creates a CapacityManager instance that only accepts cells with no output data.
    *
-   * @returns An instance of CapacityManager configured with an output data length range of [0n, 1n]
-   *          and an isCapacity function that always returns true.
+   * @returns An instance of CapacityManager configured with an output data length range of [0n, 1n].
    */
-  static noOutputData(): CapacityManager {
-    return new CapacityManager([0n, 1n], () => true);
+  static withEmptyData(): CapacityManager {
+    return new CapacityManager([0n, 1n]);
   }
 
   /**
    * Creates a CapacityManager instance that accepts cells regardless of their output data.
    *
-   * @returns An instance of CapacityManager with no output data length filtering (undefined)
-   *          and an isCapacity function that always returns true.
+   * @returns An instance of CapacityManager with no output data length filtering.
    */
-  static anyOutputData(): CapacityManager {
-    return new CapacityManager(undefined, () => true);
+  static withAnyData(): CapacityManager {
+    return new CapacityManager(undefined);
   }
 
   /**
    * Checks if the provided cell qualifies as a Capacity Cell.
    *
    * @param cell - The cell to check.
-   * @returns True if the cell is considered a Capacity Cell; otherwise, false.
+   * @returns True if the cell qualifies as a Capacity Cell; otherwise, false.
    *
    * @remarks
    * A cell is considered a Capacity Cell if:
-   * - It does not have a type defined in its cell output.
-   * - If an outputDataLenRange is provided, the effective length of the cell's outputData (calculated as (length - 2) / 2)
-   *   falls within the specified [start, end) range.
-   * - When the outputData length criteria is satisfied (or if no criteria is provided), the cell must pass the additional
-   *   check specified by the isCapacityFunc.
+   *   - It does not have a type defined in its cell output.
+   *   - If an outputDataLenRange is provided, the effective length of the cell's output data (calculated as (length - 2) / 2)
+   *     falls within the specified [start, end) range.
    */
   isCapacity(cell: ccc.Cell): boolean {
     if (cell.cellOutput.type !== undefined) {
@@ -71,13 +67,13 @@ export class CapacityManager {
     }
 
     if (!this.outputDataLenRange) {
-      return this.isCapacityFunc(cell);
+      return true;
     }
 
     const [start, end] = this.outputDataLenRange;
     const dataLen = (cell.outputData.length - 2) / 2;
     if (start <= dataLen && dataLen < end) {
-      return this.isCapacityFunc(cell);
+      return true;
     }
 
     return false;
@@ -102,22 +98,22 @@ export class CapacityManager {
    * Finds Capacity cells using the provided client, locks, and options.
    *
    * @param client - The client used to interact with the blockchain.
-   * @param locks - An array of scripts that act as locks for the cells to be found.
+   * @param locks - An array of lock scripts specifying the criteria for fetching cells.
    * @param options - Optional parameters for the search.
    *                  - onChain: If true, cells are searched on chain; otherwise, cached cells are returned first.
-   *
    * @yields CapacityCell objects that satisfy the criteria.
    *
    * @remarks
-   * For each provided lock script, the method uses the client's cell finding capability (either directly on chain
-   * or via a cached search) with a filter that includes the configuration for script length (specified as [0n, 1n])
-   * and the outputData length range (if provided). Each found cell is then checked:
-   * - If the cell has a non-undefined type, it is immediately disqualified.
-   * - If the cell's output data length is validated (when an outputDataLenRange is present) and the additional
-   *   isCapacityFunc check passes, and the cell's lock script equals the provided lock,
-   *   the cell is yielded as a valid CapacityCell.
+   * For each unique lock script provided:
+   *  - The method uses the client's cell finding capability (either on chain or cached) with a filter that includes:
+   *      - A script length criteria (specified as [0n, 1n]).
+   *      - The output data length range (if provided).
+   *  - Each found cell is validated:
+   *      - If the cell has a defined type in its output, it is immediately disqualified.
+   *      - If the cell's output data length meets the configured criteria and the cell’s lock script equals the provided lock,
+   *        it is yielded as a valid CapacityCell.
    *
-   * Note: The number "400" is specified to align with a particular pull request on the Nervos CKB repository
+   * Note: The number "400" is used as a limit to align with a particular pull request on the Nervos CKB repository
    * (https://github.com/nervosnetwork/ckb/pull/4576).
    */
   async *findCapacities(
@@ -130,6 +126,7 @@ export class CapacityManager {
       onChain?: boolean;
     },
   ): AsyncGenerator<CapacityCell> {
+    // Loop through each unique lock script.
     for (const lock of unique(locks)) {
       const findCellsArgs = [
         {
@@ -143,9 +140,10 @@ export class CapacityManager {
           withData: true,
         },
         "asc",
-        400, // https://github.com/nervosnetwork/ckb/pull/4576
+        400, // See: https://github.com/nervosnetwork/ckb/pull/4576
       ] as const;
 
+      // Depending on options, choose the correct client function to find cells.
       for await (const cell of options?.onChain
         ? client.findCellsOnChain(...findCellsArgs)
         : client.findCells(...findCellsArgs)) {
@@ -168,8 +166,10 @@ export class CapacityManager {
  * Interface representing a Capacity Cell.
  *
  * @remarks
- * A CapacityCell consists of the underlying cell and associated value components.
- * It also includes a symbol property indicating that this cell is a Capacity Cell.
+ * A CapacityCell consists of:
+ *   - The underlying blockchain cell.
+ *   - Associated value components.
+ *   - A symbol property indicating that this cell is a Capacity Cell.
  */
 export interface CapacityCell extends ValueComponents {
   /**
@@ -179,7 +179,7 @@ export interface CapacityCell extends ValueComponents {
 
   /**
    * A symbol property indicating that this cell is a Capacity Cell.
-   * This property is always set to true.
+   * The property is always set to true.
    */
   [isCapacitySymbol]: true;
 }
