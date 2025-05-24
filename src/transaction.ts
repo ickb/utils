@@ -14,6 +14,7 @@ import type { UdtHandler } from "./udt.js";
 export class SmartTransaction extends ccc.Transaction {
   /**
    * Creates an instance of SmartTransaction.
+   *
    * @param version - The version of the transaction.
    * @param cellDeps - The cell dependencies for the transaction.
    * @param headerDeps - The header dependencies for the transaction.
@@ -22,8 +23,7 @@ export class SmartTransaction extends ccc.Transaction {
    * @param outputsData - The data associated with the outputs.
    * @param witnesses - The witnesses for the transaction.
    * @param udtHandlers - A map of UDT handlers associated with the transaction.
-   * @param headers - A map of headers associated with the transaction, indexed by
-   *  their hash, number and possibly transaction hash.
+   * @param headers - A map of headers associated with the transaction, indexed by their hash, number, and possibly transaction hash.
    */
   constructor(
     version: ccc.Num,
@@ -49,21 +49,29 @@ export class SmartTransaction extends ccc.Transaction {
 
   /**
    * Automatically adds change cells for both capacity and UDTs for which a handler is defined.
-   * @param args - The parameters for the completeFee method.
-   * @returns A promise that resolves to a tuple containing the quantity of added capacity cells
-   * and a boolean indicating if an output capacity change cells was added.
+   *
+   * @param args - The parameters for the completeFee method, as defined by ccc.Transaction["completeFee"].
+   * @returns A promise that resolves to a tuple:
+   *          [number, boolean] where the number is the quantity of added capacity cells and the boolean
+   *          indicates if an output capacity change cell was added.
+   *
+   * The function will:
+   * - Add change cells for all the defined UDTs.
+   * - Verify that each UDT is balanced by re-checking the inputs.
+   * - Add capacity change cells via the superclass method.
+   * - Enforce a condition on NervosDAO transactions to have at most 64 output cells.
    */
   override async completeFee(
     ...args: Parameters<ccc.Transaction["completeFee"]>
   ): Promise<[number, boolean]> {
     const signer = args[0];
 
-    // Add change cells for all defined UDTs
+    // Add change cells for all defined UDTs.
     for (const { script: udt } of this.udtHandlers.values()) {
       await this.completeInputsByUdt(signer, udt);
     }
 
-    // Double check that all UDTs are even out
+    // Double check that all UDTs are even out.
     for (const { script: udt } of this.udtHandlers.values()) {
       const addedCount = await this.completeInputsByUdt(signer, udt);
       if (addedCount > 0) {
@@ -71,11 +79,11 @@ export class SmartTransaction extends ccc.Transaction {
       }
     }
 
-    // Add capacity change cells
+    // Add capacity change cells.
     const res = super.completeFee(...args);
 
-    // Check that, if NervosDAO cells are included, then there are at most 64 output cells, see:
-    // https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0023-dao-deposit-withdraw/0023-dao-deposit-withdraw.md#gotchas
+    // Check that, if NervosDAO cells are included, then there are at most 64 output cells.
+    // See: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0023-dao-deposit-withdraw/0023-dao-deposit-withdraw.md#gotchas
     const { hashType, codeHash } = await signer.client.getKnownScript(
       ccc.KnownScript.NervosDao,
     );
@@ -92,9 +100,13 @@ export class SmartTransaction extends ccc.Transaction {
 
   /**
    * Retrieves the balance of UDT inputs using the appropriate handler if it exists.
+   *
    * @param client - The client instance used to interact with the blockchain.
    * @param udtLike - The UDT script or script-like object.
-   * @returns A promise that resolves to the balance of UDT inputs.
+   * @returns A promise that resolves to the balance of UDT inputs as a ccc.FixedPoint.
+   *
+   * If a custom UDT handler exists for the provided UDT, its getInputsUdtBalance method is used.
+   * Otherwise, the balance is derived from the superclass's implementation.
    */
   override getInputsUdtBalance(
     client: ccc.Client,
@@ -109,9 +121,12 @@ export class SmartTransaction extends ccc.Transaction {
 
   /**
    * Retrieves the balance of UDT outputs using the appropriate handler if it exists.
-   * @param client - The client instance used to interact with the blockchain.
+   *
    * @param udtLike - The UDT script or script-like object.
-   * @returns A promise that resolves to the balance of UDT outputs.
+   * @returns The balance of UDT outputs as a ccc.FixedPoint.
+   *
+   * If a custom UDT handler exists for the provided UDT, its getOutputsUdtBalance method is used.
+   * Otherwise, the balance is derived from the superclass's implementation.
    */
   override getOutputsUdtBalance(udtLike: ccc.ScriptLike): ccc.FixedPoint {
     const udt = ccc.Script.from(udtLike);
@@ -122,9 +137,17 @@ export class SmartTransaction extends ccc.Transaction {
   }
 
   /**
-   * Asynchronously retrieves the total capacity of inputs, accounting for deposit withdrawals' extra capacity.
+   * Asynchronously retrieves the total capacity of inputs, taking into account the extra capacity
+   * produced by deposit withdrawals.
+   *
    * @param client - The client instance used to interact with the blockchain.
-   * @returns A promise that resolves to the total capacity of inputs.
+   * @returns A promise that resolves to the total capacity of inputs as a ccc.Num.
+   *
+   * The method works by:
+   * - Iterating over all inputs.
+   * - Completing extra information for each input.
+   * - Summing the capacities.
+   * - Recognizing and then compensating for NervosDAO withdrawal requests by calculating DAO profits.
    */
   override async getInputsCapacity(client: ccc.Client): Promise<ccc.Num> {
     const { hashType, codeHash } = await client.getKnownScript(
@@ -135,11 +158,11 @@ export class SmartTransaction extends ccc.Transaction {
     return ccc.reduceAsync(
       this.inputs,
       async (total, input) => {
-        // Get all cell info
+        // Get all cell information.
         await input.completeExtraInfos(client);
         const { previousOutput: outPoint, cellOutput, outputData } = input;
 
-        // Input is not well defined
+        // Input is not well defined.
         if (!cellOutput || !outputData) {
           throw Error("Unable to complete input");
         }
@@ -151,18 +174,17 @@ export class SmartTransaction extends ccc.Transaction {
 
         total += cellOutput.capacity;
 
-        // If not a NervosDAO Withdrawal Request cell, return
+        // If not a NervosDAO Withdrawal Request cell, return the running total.
         if (outputData === "0x0000000000000000" || !cellOutput.type?.eq(dao)) {
           return total;
         }
 
-        // Get header of NervosDAO cell and check its inclusion in HeaderDeps
+        // For a withdrawal request cell, retrieve the corresponding deposit header and calculate the profit.
         const withdrawHeader = await this.getHeader(client, {
           type: "txHash",
           value: outPoint.txHash,
         });
 
-        // It's a withdrawal request cell, get header of previous deposit cell
         const depositHeader = await this.getHeader(client, {
           type: "number",
           value: mol.Uint64LE.decode(outputData),
@@ -179,8 +201,9 @@ export class SmartTransaction extends ccc.Transaction {
 
   /**
    * Gets the unique key for a UDT based on its script.
+   *
    * @param udt - The UDT script or script-like object.
-   * @returns A string representing the unique key for the UDT in udtHandlers.
+   * @returns A string representing the unique key for the UDT in the udtHandlers map.
    */
   encodeUdtKey(udt: ccc.ScriptLike): string {
     return ccc.Script.from(udt).toBytes().toString();
@@ -188,8 +211,9 @@ export class SmartTransaction extends ccc.Transaction {
 
   /**
    * Retrieves the UDT handler associated with a given UDT.
+   *
    * @param udt - The UDT script or script-like object.
-   * @returns The UdtHandler associated with the UDT, or undefined if not found.
+   * @returns The UdtHandler for the provided UDT, or undefined if no handler exists.
    */
   getUdtHandler(udt: ccc.ScriptLike): UdtHandler | undefined {
     return this.udtHandlers.get(this.encodeUdtKey(udt));
@@ -197,16 +221,22 @@ export class SmartTransaction extends ccc.Transaction {
 
   /**
    * Checks if a UDT handler exists for a given UDT.
+   *
    * @param udt - The UDT script or script-like object.
-   * @returns A boolean indicating whether a UDT handler exists for the UDT.
+   * @returns True if a handler exists for the provided UDT; otherwise, false.
    */
   hasUdtHandler(udt: ccc.ScriptLike): boolean {
     return this.udtHandlers.has(this.encodeUdtKey(udt));
   }
 
   /**
-   * Adds UDT handlers to the transaction, substituting in-place if a handler for the same UDT already exists.
-   * @param udtHandlers - One or more UDT handlers to add.
+   * Adds UDT handlers to the transaction.
+   *
+   * @param udtHandlers - One or more UDT handlers (or arrays of them) to add.
+   *
+   * For every added UDT handler, the method:
+   * - Adds or substitutes the handler in the udtHandlers map.
+   * - Adds the handler's cell dependencies to the transaction.
    */
   addUdtHandlers(...udtHandlers: (UdtHandler | UdtHandler[])[]): void {
     udtHandlers.flat().forEach((udtHandler) => {
@@ -216,35 +246,31 @@ export class SmartTransaction extends ccc.Transaction {
   }
 
   /**
-   * Encode a header key based on the provided `HeaderKey` object.
+   * Encodes a header key based on the provided HeaderKey object.
    *
-   * @param headerKey - An object of type `HeaderKey` that contains the type and value
-   *   used to generate the header key.
-   * @returns A string representing the generated header key, which is a combination
-   *   of the type and the byte representation of the value.
+   * @param headerKey - An object containing the type and value used to generate the header key.
+   * @returns A string representing the generated header key, combining the type and the byte representation of the value.
    */
   encodeHeaderKey(headerKey: HeaderKey): string {
     const { type, value } = headerKey;
-
     return ccc.numFrom(value).toString() + type;
   }
 
   /**
-   * Adds one or more transaction headers to headers, indexed by their hash, number, and optional transaction hash.
+   * Adds one or more transaction headers to the headers cache, indexed by their hash, number, and optional transaction hash.
    *
-   * This method accepts either a single `TransactionHeader` or an array of `TransactionHeader` objects.
-   * It encodes the header's hash, number, and optional transaction hash into keys and ensures that each header
-   * is uniquely stored. If a header with the same hash already exists, it retains the old header.
+   * @param headers - One or more TransactionHeader objects (or arrays of them) to be added.
+   * @throws Error if two different headers (by hash) are found for the same encoded key.
    *
-   * @param headers - One or more transaction headers to be added. This can be a single `TransactionHeader`
-   *   or an array of `TransactionHeader` objects.
-   * @throws Error if two different hashes are found for the same header.
+   * The method:
+   * - Encodes keys from header hash, number, and (optionally) transaction hash.
+   * - Stores headers uniquely, retaining the old header if one already exists for a key.
+   * - Adds the header's hash to headerDeps if not already present.
    */
   addHeaders(...headers: (TransactionHeader | TransactionHeader[])[]): void {
     headers.flat().forEach(({ header, txHash }) => {
       const { hash, number } = header;
-
-      // Encode Hash, Number and possibly TxHash as header keys
+      // Encode Hash, Number and possibly TxHash as header keys.
       const keys = [
         this.encodeHeaderKey({
           type: "hash",
@@ -264,20 +290,20 @@ export class SmartTransaction extends ccc.Transaction {
         );
       }
 
-      // Add Header by Hash, Number and possibly TxHash
+      // Add Header by each key. Retain the old header if one already exists with the same hash.
       for (const key of keys) {
         const h = this.headers.get(key);
         if (!h) {
           this.headers.set(key, header);
         } else if (hash == h.hash) {
-          // Keep old header
+          // Keep old header.
           header = h;
         } else {
           throw Error("Found two hashes for the same header");
         }
       }
 
-      // Add Header to HeaderDeps
+      // Add the header's hash to headerDeps if not already present.
       if (!this.headerDeps.some((h) => h === hash)) {
         this.headerDeps.push(hash);
       }
@@ -287,14 +313,15 @@ export class SmartTransaction extends ccc.Transaction {
   /**
    * Retrieves a block header based on the provided header key, caching the result for future use.
    *
-   * This method first attempts to retrieve the header from a local cache. If the header is not found,
-   * it fetches the header from the blockchain using the provided client and header key. After fetching,
-   * it adds the header to the cache and verifies its presence in the header dependencies.
+   * @param client - An instance of ccc.Client used to interact with the blockchain.
+   * @param headerKey - An object of type HeaderKey specifying how to retrieve the header.
+   * @returns A promise that resolves to a ccc.ClientBlockHeader representing the fetched block header.
+   * @throws Error if the header cannot be added to or found in header dependencies.
    *
-   * @param client - An instance of `ccc.Client` used to interact with the blockchain.
-   * @param headerKey - An object of type `HeaderKey` that specifies how to retrieve the header.
-   * @returns A promise that resolves to a `ccc.ClientBlockHeader` representing the block header.
-   * @throws Error if the header is not found in the header dependencies.
+   * The method:
+   * - Attempts to retrieve the header from a local cache.
+   * - If not found, fetches it from the blockchain.
+   * - Caches the retrieved header and ensures it is present in headerDeps.
    */
   async getHeader(
     client: ccc.Client,
@@ -313,7 +340,7 @@ export class SmartTransaction extends ccc.Transaction {
         throw Error("Header was not present in HeaderDeps");
       }
     } else {
-      // Double check that header is present in HeaderDeps
+      // Double check that header is present in headerDeps.
       const { hash } = header;
       if (!this.headerDeps.some((h) => h === hash)) {
         throw Error("Header not found in HeaderDeps");
@@ -325,7 +352,13 @@ export class SmartTransaction extends ccc.Transaction {
 
   /**
    * Creates a default instance of SmartTransaction.
+   *
    * @returns A new instance of SmartTransaction with default values.
+   *
+   * The default instance has:
+   * - version set to 0n,
+   * - empty arrays for cellDeps, headerDeps, inputs, outputs, outputsData and witnesses,
+   * - new Maps for udtHandlers and headers.
    */
   static override default(): SmartTransaction {
     return new SmartTransaction(
@@ -343,7 +376,10 @@ export class SmartTransaction extends ccc.Transaction {
 
   /**
    * Clones the transaction part and shares udtHandlers and headers.
+   *
    * @returns A new instance of SmartTransaction that is a clone of the current instance.
+   *
+   * Note that the method reuses the udtHandlers and headers maps to ensure that they are shared among descendants.
    */
   override clone(): SmartTransaction {
     const result = SmartTransaction.from(super.clone());
@@ -354,7 +390,12 @@ export class SmartTransaction extends ccc.Transaction {
 
   /**
    * Copies data from an input transaction.
-   * @param txLike - The transaction-like object to copy from.
+   *
+   * @param txLike - The transaction-like object to copy data from.
+   *
+   * This method copies the transaction details including cellDeps, headerDeps, inputs,
+   * outputs, outputsData and witnesses. If the udtHandlers or headers instances differ,
+   * their entries are merged from the source transaction.
    */
   override copy(txLike: SmartTransactionLike): void {
     const tx = SmartTransaction.from(txLike);
@@ -365,14 +406,28 @@ export class SmartTransaction extends ccc.Transaction {
     this.outputs = tx.outputs;
     this.outputsData = tx.outputsData;
     this.witnesses = tx.witnesses;
-    this.udtHandlers = tx.udtHandlers;
-    this.headers = tx.headers;
+    // If udtHandlers are different, merge entries from tx's udtHandlers into this.udtHandlers.
+    if (this.udtHandlers !== tx.udtHandlers) {
+      for (const [k, h] of tx.udtHandlers.entries()) {
+        this.udtHandlers.set(k, h);
+      }
+    }
+    // If headers are different, merge entries from tx's headers into this.headers.
+    if (this.headers !== tx.headers) {
+      for (const [k, h] of tx.headers.entries()) {
+        this.headers.set(k, h);
+      }
+    }
   }
 
   /**
    * Creates a SmartTransaction from a Lumos transaction skeleton.
+   *
    * @param skeleton - The Lumos transaction skeleton to convert.
-   * @returns A new instance of SmartTransaction created from the skeleton.
+   * @returns A new instance of SmartTransaction created from the provided skeleton.
+   *
+   * This method converts the given Lumos skeleton into a SmartTransaction using the base class conversion,
+   * and then adapting it for the SmartTransaction type.
    */
   static override fromLumosSkeleton(
     skeleton: ccc.LumosTransactionSkeletonType,
@@ -381,9 +436,14 @@ export class SmartTransaction extends ccc.Transaction {
   }
 
   /**
-   * Creates a SmartTransaction from an input transaction. It shares udtHandlers and headers.
+   * Creates a SmartTransaction from an input transaction-like object.
+   *
    * @param txLike - The transaction-like object to create the SmartTransaction from.
+   *                 May contain missing udtHandlers and headers, which will be defaulted to new Maps.
    * @returns A new instance of SmartTransaction created from the input transaction.
+   *
+   * If the input object is already an instance of SmartTransaction, it is returned directly.
+   * Otherwise, a new SmartTransaction is constructed by copying properties from the input.
    */
   static override from(txLike: SmartTransactionLike): SmartTransaction {
     if (txLike instanceof SmartTransaction) {
@@ -455,11 +515,15 @@ export interface TransactionHeader {
 }
 
 /**
- * Retrieves the parameters of a SmartTransaction.
+ * Retrieves the constructor parameters of a SmartTransaction instance.
  *
  * @param tx - The SmartTransaction instance from which to retrieve parameters.
  * @param shouldClone - A boolean indicating whether to clone the transaction before retrieving parameters.
+ *                      If true, a shallow copy of the inputs is maintained separately and restored after cloning.
  * @returns An array of parameters corresponding to the SmartTransaction constructor.
+ *
+ * This helper method allows creating a new SmartTransaction instance by extracting the underlying parameters
+ * from an existing transaction object.
  */
 function parametersOf(
   tx: SmartTransaction,
@@ -502,7 +566,13 @@ function parametersOf(
 export class RestrictedTransaction extends SmartTransaction {
   /**
    * Creates an instance of RestrictedTransaction from a SmartTransaction.
-   * @param tx - The SmartTransaction instance to create the RestrictedTransaction from.
+   *
+   * @param tx - The SmartTransaction instance used to create the RestrictedTransaction.
+   * @param shouldClone - Determines whether to clone the provided transaction.
+   *                      Defaults to true.
+   *
+   * The constructor forwards the parameters from the SmartTransaction (using a helper
+   * function such as parametersOf) to initialize the base SmartTransaction properties.
    */
   constructor(tx: SmartTransaction, shouldClone = true) {
     super(...parametersOf(tx, shouldClone));
@@ -510,22 +580,27 @@ export class RestrictedTransaction extends SmartTransaction {
 
   /**
    * Creates a clone of the current RestrictedTransaction instance.
-   * @returns A new instance of RestrictedTransaction with the same properties.
-   * The inputs metadata is preserved to avoid refetching that data.
+   *
+   * @returns A new instance of RestrictedTransaction with the same properties as the original.
+   *
+   * This method preserves the input metadata and prevents refetching of InputCells when cloning.
    */
   override clone(): RestrictedTransaction {
     return new RestrictedTransaction(this, true);
   }
 
   /**
-   * It does not complete the inputs for the transaction.
-   * This method is overridden to disable fetching additional cells.
+   * Overrides the completeInputs method to disable fetching additional cells.
+   *
    * @param _0 - Unused parameter.
    * @param _1 - Unused parameter.
    * @param _2 - Unused parameter.
-   * @param init - The initial value to accumulate.
-   * @returns A promise that resolves to an object containing the count of added inputs
-   * and the accumulated value.
+   * @param init - The initial accumulated value returned as part of the result.
+   * @returns A promise that resolves to an object containing:
+   * - addedCount: always 0, indicating that no inputs were added.
+   * - accumulated: the initial accumulated value.
+   *
+   * This implementation intentionally disables completing inputs to avoid additional network requests.
    */
   // eslint-disable-next-line @typescript-eslint/require-await
   override async completeInputs<T>(
@@ -545,7 +620,11 @@ export class RestrictedTransaction extends SmartTransaction {
 
   /**
    * Creates a default instance of RestrictedTransaction.
+   *
    * @returns A new instance of RestrictedTransaction with default values.
+   *
+   * The default instance is created based on the base default SmartTransaction,
+   * with the additional RestrictedTransaction behavior.
    */
   static override default(): RestrictedTransaction {
     return new RestrictedTransaction(super.default(), false);
@@ -553,8 +632,12 @@ export class RestrictedTransaction extends SmartTransaction {
 
   /**
    * Creates a RestrictedTransaction from a Lumos transaction skeleton.
-   * @param skeleton - The LumosTransactionSkeletonType to create the RestrictedTransaction from.
-   * @returns A new instance of RestrictedTransaction.
+   *
+   * @param skeleton - The LumosTransactionSkeletonType used to create the transaction.
+   * @returns A new instance of RestrictedTransaction converted from the provided skeleton.
+   *
+   * This method converts a Lumos skeleton into a SmartTransaction using the base class method,
+   * then wraps it into a RestrictedTransaction.
    */
   static override fromLumosSkeleton(
     skeleton: ccc.LumosTransactionSkeletonType,
@@ -564,8 +647,12 @@ export class RestrictedTransaction extends SmartTransaction {
 
   /**
    * Creates a RestrictedTransaction from a transaction-like object.
-   * @param txLike - The transaction-like object to create the RestrictedTransaction from.
-   * @returns A new instance of RestrictedTransaction.
+   *
+   * @param txLike - The transaction-like object used to create the RestrictedTransaction.
+   * @returns A new instance of RestrictedTransaction constructed from the provided object.
+   *
+   * This method first converts the input transaction-like object into a SmartTransaction (if not already one)
+   * and then wraps it into a RestrictedTransaction.
    */
   static override from(txLike: SmartTransactionLike): RestrictedTransaction {
     return new RestrictedTransaction(SmartTransaction.from(txLike), false);
