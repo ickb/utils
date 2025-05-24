@@ -1,6 +1,6 @@
 import { ccc } from "@ckb-ccc/core";
 import type { SmartTransaction } from "./transaction.js";
-import type { ValueComponents } from "./utils.js";
+import { unique, type ValueComponents } from "./utils.js";
 
 /**
  * Symbol to represent the isCapacity property of Capacity Cells.
@@ -130,7 +130,7 @@ export class CapacityManager {
       onChain?: boolean;
     },
   ): AsyncGenerator<CapacityCell> {
-    for (const lock of locks) {
+    for (const lock of unique(locks)) {
       const findCellsArgs = [
         {
           script: lock,

@@ -1,5 +1,5 @@
 import { ccc } from "@ckb-ccc/core";
-import type { ScriptDeps, ValueComponents } from "./utils.js";
+import { unique, type ScriptDeps, type ValueComponents } from "./utils.js";
 import type { SmartTransaction } from "./transaction.js";
 
 /**
@@ -150,7 +150,7 @@ export class UdtManager implements UdtHandler {
       onChain?: boolean;
     },
   ): AsyncGenerator<UdtCell> {
-    for (const lock of locks) {
+    for (const lock of unique(locks)) {
       const findCellsArgs = [
         {
           script: lock,

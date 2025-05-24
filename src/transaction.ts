@@ -1,5 +1,5 @@
 import { ccc, mol } from "@ckb-ccc/core";
-import { getHeader, type HeaderKey } from "./utils.js";
+import { getHeader, hexFrom, type HeaderKey } from "./utils.js";
 import type { UdtHandler } from "./udt.js";
 
 /**
@@ -206,7 +206,7 @@ export class SmartTransaction extends ccc.Transaction {
    * @returns A string representing the unique key for the UDT in the udtHandlers map.
    */
   encodeUdtKey(udt: ccc.ScriptLike): string {
-    return ccc.Script.from(udt).toBytes().toString();
+    return hexFrom(ccc.Script.from(udt));
   }
 
   /**
@@ -253,7 +253,7 @@ export class SmartTransaction extends ccc.Transaction {
    */
   encodeHeaderKey(headerKey: HeaderKey): string {
     const { type, value } = headerKey;
-    return ccc.numFrom(value).toString() + type;
+    return hexFrom(value) + type;
   }
 
   /**
