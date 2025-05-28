@@ -1,7 +1,7 @@
 {
   "name": "@ickb/utils",
-  "version": "1000.0.61",
-  "description": "NervosDAO utilities built on top of CCC",
+  "version": "1000.0.62",
+  "description": "General utilities built on top of CCC",
   "author": "phroi",
   "license": "MIT",
   "private": false,

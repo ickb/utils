@@ -140,31 +140,53 @@ export function epochCompare(a: ccc.Epoch, b: ccc.Epoch): 1 | 0 | -1 {
 }
 
 /**
- * Adds to an epoch a duration expressed in another epoch and returns the resulting epoch.
+ * Adds a delta epoch (duration) to a base epoch and returns the resulting epoch.
  *
- * @param epoch - The base epoch to which the delta will be added.
- * @param delta - The duration to add to the base epoch.
- * @returns The resulting epoch after addition.
+ * The function computes the addition of two epochs, defined as [number, index, length]. It uses the following rules:
+ * - If the two epochs have the same "length" (i.e. scaling factor), their indices are directly summed.
+ * - If the two epochs have different lengths, indices are scaled to a common denominator before summing.
+ * - In both cases, the resulting fraction (index/length) is normalized by dividing both by their greatest common divisor.
+ *
+ * @param epoch - The base epoch to which the delta will be added. Must be a non-zero length epoch.
+ * @param delta - The duration (epoch) to add to the base epoch. Must also have a non-zero length.
+ * @returns The resulting epoch after adding <code>delta</code> to <code>epoch</code>, represented as [number, index, length].
  * @throws Error if either epoch has a length of zero.
  */
 export function epochAdd(epoch: ccc.Epoch, delta: ccc.Epoch): ccc.Epoch {
   const [eNumber, eIndex, eLength] = epoch;
   const [dNumber, dIndex, dLength] = delta;
 
+  // Ensure both epochs have non-zero denominators
   if (eLength === 0n || dLength === 0n) {
     throw new Error("Zero EpochSinceValue length");
   }
 
-  let rawIndex = eIndex;
+  let rawIndex: ccc.Num;
+  let rawLength: ccc.Num;
+
+  // If the epochs have different denominators, align them to a common denominator.
   if (eLength !== dLength) {
-    rawIndex += (dIndex * eLength + dLength - 1n) / dLength;
+    rawIndex = dIndex * eLength + eIndex * dLength;
+    rawLength = eLength * dLength;
   } else {
-    rawIndex += dIndex;
+    // If denominators are equal, simply add the indices.
+    rawIndex = eIndex + dIndex;
+    rawLength = eLength;
   }
 
+  // Reduce the fraction rawIndex / rawLength to its simplest form.
+  const g = gcd(rawIndex, rawLength);
+  rawIndex /= g;
+  rawLength /= g;
+
+  // The resulting length remains the same as the base epoch's length.
   const length = eLength;
+
+  // Calculate index as the remainder of dividing rawIndex by the epoch 'length'.
   const index = rawIndex % length;
-  const number = eNumber + dNumber + (rawIndex - index) / length;
+
+  // Calculate the updated whole number, adding overflow from the fraction.
+  const number = eNumber + dNumber + rawIndex / length;
 
   return [number, index, length];
 }
