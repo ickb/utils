@@ -1,6 +1,6 @@
 {
   "name": "@ickb/utils",
-  "version": "1000.0.62",
+  "version": "1000.0.67",
   "description": "General utilities built on top of CCC",
   "author": "phroi",
   "license": "MIT",
@@ -34,7 +34,7 @@
     "eslint": "^9.27.0",
     "prettier": "^3.5.3",
     "typescript": "^5.8.3",
-    "typescript-eslint": "^8.32.1"
+    "typescript-eslint": "^8.33.0"
   },
   "dependencies": {
     "@ckb-ccc/core": "^1.8.1"
