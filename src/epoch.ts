@@ -2,129 +2,237 @@ import { ccc } from "@ckb-ccc/core";
 import { gcd } from "./utils.js";
 
 /**
- * Compares two epochs.
- *
- * The epochs are normalized first, then compared based on their whole part
- * and fractional (index/length) part.
- *
- * @param a - The first epoch to compare.
- * @param b - The second epoch to compare.
- * @returns 1 if epoch a is greater than b, -1 if a is less than b, or 0 if they are equal.
+ * Represents an Epoch in two possible forms:
+ * - An object with { number, index, length } values.
+ * - A native ccc.Epoch.
  */
-export function epochCompare(a: ccc.Epoch, b: ccc.Epoch): 1 | 0 | -1 {
-  const [aNumber, aIndex, aLength] = epochNormalize(a);
-  const [bNumber, bIndex, bLength] = epochNormalize(b);
+export type EpochLike =
+  | {
+      number: ccc.Num;
+      index: ccc.Num;
+      length: ccc.Num;
+    }
+  | ccc.Epoch;
 
-  if (aNumber < bNumber) {
-    return -1;
-  }
-  if (aNumber > bNumber) {
-    return 1;
+/**
+ * Class representing an Epoch that tracks a value composed of a whole
+ * number and a normalized fractional part.
+ *
+ * The Epoch is stored as three components:
+ * - number: the whole number part,
+ * - index: the numerator of the fractional part, and
+ * - length: the denominator of the fractional part.
+ *
+ * The class provides static factory methods to construct an Epoch from
+ * different representations (including a hexadecimal representation) and
+ * implements methods to add, subtract, normalize, compare, and convert to a
+ * hexadecimal representation, in addition to converting the epoch to a timestamp.
+ */
+export class Epoch {
+  /**
+   * Create an Epoch instance.
+   * @param number - The whole number part.
+   * @param index - The fractional numerator.
+   * @param length - The fractional denominator.
+   */
+  private constructor(
+    public readonly number: ccc.Num,
+    public readonly index: ccc.Num,
+    public readonly length: ccc.Num,
+  ) {}
+
+  /**
+   * Create an Epoch instance from an EpochLike representation.
+   *
+   * The method first de-structures the passed value into the standard tuple,
+   * then performs normalization:
+   * - Ensures the epoch length is positive.
+   * - Corrects negative index by borrowing from the whole number.
+   * - Reduces the fractional part using the greatest common divisor.
+   * - Carries over any overflow from the fraction.
+   *
+   * @param epochLike - The EpochLike value to convert.
+   * @returns A normalized Epoch instance.
+   * @throws Error if the epoch length is non-positive.
+   */
+  static from(epochLike: EpochLike): Epoch {
+    if (epochLike instanceof Epoch) {
+      return epochLike;
+    }
+
+    let { number, index, length } = deStruct(epochLike);
+
+    // Ensure the epoch has a positive denominator.
+    if (length <= 0n) {
+      throw new Error("Non positive Epoch length");
+    }
+
+    // Normalize negative index values by borrowing from the whole number.
+    if (index < 0n) {
+      // Calculate how many whole units to borrow.
+      const n = (-index + length - 1n) / length;
+      number -= n;
+      index += length * n;
+    }
+
+    // Reduce the fraction (index / length) to its simplest form using the greatest common divisor.
+    const g = gcd(index, length);
+    index /= g;
+    length /= g;
+
+    // Add any whole number overflow from the fraction.
+    number += index / length;
+
+    // Calculate the leftover index after accounting for the whole number part from the fraction.
+    index %= length;
+
+    return new Epoch(number, index, length);
   }
 
-  // Compare fractions by cross-multiplying indices with denominators.
-  const v0 = aIndex * bLength;
-  const v1 = bIndex * aLength;
-  if (v0 < v1) {
-    return -1;
-  }
-  if (v0 > v1) {
-    return 1;
+  /**
+   * Create an Epoch from a hexadecimal string representation.
+   *
+   * @param hex - The hexadecimal representation of the epoch.
+   * @returns A normalized Epoch instance.
+   */
+  static fromHex(hex: ccc.Hex): Epoch {
+    return Epoch.from(ccc.epochFromHex(hex));
   }
 
-  return 0;
+  /**
+   * Convert this Epoch instance to its hexadecimal string representation.
+   *
+   * @returns The hexadecimal representation of this epoch.
+   */
+  toHex(): ccc.Hex {
+    const { number, index, length } = this;
+    return ccc.epochToHex([number, index, length]);
+  }
+
+  /**
+   * Compare this epoch with another Epoch (or EpochLike).
+   *
+   * The comparison first checks the whole number parts. If they are equal,
+   * it compares the fractions by cross-multiplying the indices with the denominators.
+   *
+   * @param other - The epoch or epoch-like  to compare with.
+   * @returns 1 if this epoch is greater, -1 if less, and 0 if equal.
+   */
+  compare(other: EpochLike): 1 | 0 | -1 {
+    other = Epoch.from(other);
+
+    if (this.number < other.number) {
+      return -1;
+    }
+    if (this.number > other.number) {
+      return 1;
+    }
+
+    // Compare fractions by cross-multiplying indices with denominators.
+    const v0 = this.index * other.length;
+    const v1 = other.index * this.length;
+    if (v0 < v1) {
+      return -1;
+    }
+    if (v0 > v1) {
+      return 1;
+    }
+
+    return 0;
+  }
+
+  /**
+   * Add another Epoch (or EpochLike) to this epoch.
+   *
+   * When adding, the whole number parts are directly summed. If the epochs have different
+   * denominators (lengths), the fractions are first aligned to a common denominator, then
+   * normalized.
+   *
+   * @param other - The epoch or epoch-like value to add.
+   * @returns A new normalized Epoch instance representing the sum.
+   */
+  add(other: EpochLike): Epoch {
+    other = Epoch.from(other);
+
+    // Sum the whole number parts.
+    const number = this.number + other.number;
+    let index: ccc.Num;
+    let length: ccc.Num;
+
+    // If the epochs have different denominators (lengths), align them to a common denominator.
+    if (this.length !== other.length) {
+      index = other.index * this.length + this.index * other.length;
+      length = this.length * other.length;
+    } else {
+      // If denominators are equal, simply add the indices.
+      index = this.index + other.index;
+      length = this.length;
+    }
+
+    // Normalize the resulting epoch tuple.
+    return Epoch.from([number, index, length]);
+  }
+
+  /**
+   * Subtract an Epoch (or EpochLike) from this epoch.
+   *
+   * This method destructures the provided epoch-like value and then negates the respective
+   * components before adding them to this epoch.
+   *
+   * @param other - The epoch or epoch-like value to subtract.
+   * @returns A new normalized Epoch instance representing the difference.
+   */
+  sub(other: EpochLike): Epoch {
+    // Destructure delta into its constituents.
+    const { number, index, length } = deStruct(other);
+    return this.add([-number, -index, length]);
+  }
+
+  /**
+   * Convert this epoch to an absolute Unix timestamp.
+   *
+   * For a given reference block header, the conversion computes the difference between
+   * this epoch and the reference epoch, then applies a per-epoch millisecond duration to
+   * calculate the absolute Unix timestamp.
+   *
+   * @param reference - The reference client block header providing an epoch and timestamp.
+   * @returns The calculated Unix timestamp as a bigint.
+   */
+  toUnix(reference: ccc.ClientBlockHeader): bigint {
+    // Calculate the difference between the provided epoch and the reference epoch.
+    const { number, index, length } = this.sub(reference.epoch);
+
+    return (
+      reference.timestamp +
+      epochInMilliseconds * number +
+      (epochInMilliseconds * index) / length
+    );
+  }
 }
 
 /**
- * Adds two epochs.
+ * Deconstruct an EpochLike value into its constitutive parts.
  *
- * The function first normalizes the input epochs and then aligns them to a common denominator if needed,
- * before summing their whole number and fractional parts.
+ * The function handles both array representations and object representations of an epoch.
  *
- * @param epoch - The initial epoch.
- * @param delta - The epoch delta to add.
- * @returns The resulting epoch after addition in normalized form.
+ * @param epochLike - The epoch-like structure to deconstruct.
+ * @returns An object containing { number, index, length }.
  */
-export function epochAdd(epoch: ccc.Epoch, delta: ccc.Epoch): ccc.Epoch {
-  // Normalize the input epochs to ensure they are in proper form.
-  const [eNumber, eIndex, eLength] = epochNormalize(epoch);
-  const [dNumber, dIndex, dLength] = epochNormalize(delta);
-
-  // Sum the whole number parts.
-  const number = eNumber + dNumber;
-  let index: ccc.Num;
-  let length: ccc.Num;
-
-  // If the epochs have different denominators (lengths), align them to a common denominator.
-  if (eLength !== dLength) {
-    index = dIndex * eLength + eIndex * dLength;
-    length = eLength * dLength;
-  } else {
-    // If denominators are equal, simply add the indices.
-    index = eIndex + dIndex;
-    length = eLength;
+function deStruct(epochLike: EpochLike): {
+  number: ccc.Num;
+  index: ccc.Num;
+  length: ccc.Num;
+} {
+  if (epochLike instanceof Array) {
+    const [number, index, length] = epochLike;
+    return {
+      number,
+      index,
+      length,
+    };
   }
 
-  // Normalize the resulting epoch tuple.
-  return epochNormalize([number, index, length]);
-}
-
-/**
- * Subtracts the delta epoch from the given epoch.
- *
- * This function reuses epochAdd by negating the number and index parts of the delta.
- *
- * @param epoch - The epoch from which to subtract.
- * @param delta - The epoch delta to subtract.
- * @returns The resulting epoch after subtraction in normalized form.
- */
-export function epochSub(epoch: ccc.Epoch, delta: ccc.Epoch): ccc.Epoch {
-  // Destructure delta into its constituents.
-  const [number, index, length] = delta;
-  return epochAdd(epoch, [-number, -index, length]);
-}
-
-/**
- * Normalizes an epoch represented as a tuple [number, index, length].
- *
- * The function ensures that:
- * - The denominator is positive. (Throws an error if it is not.)
- * - Negative index values are corrected by borrowing from the whole number.
- * - The fraction (index/length) is reduced to its simplest form using the greatest common divisor.
- * - Whole number overflow from the fraction is accounted for.
- *
- * @param e - The epoch tuple to normalize.
- * @returns The normalized epoch tuple.
- * @throws {Error} If the epoch length is not positive.
- */
-export function epochNormalize(e: ccc.Epoch): ccc.Epoch {
-  let [number, index, length] = e;
-
-  // Ensure the epoch has a positive denominator.
-  if (length > 0n) {
-    throw new Error("Non positive Epoch length");
-  }
-
-  // Normalize negative index values by borrowing from the whole number.
-  if (index < 0n) {
-    // Calculate how many whole units to borrow.
-    const n = (-index + length - 1n) / length;
-    number -= n;
-    index += length * n;
-  }
-
-  // Reduce the fraction (index / length) to its simplest form using the greatest common divisor.
-  const g = gcd(index, length);
-  index /= g;
-  length /= g;
-
-  // Add any whole number overflow from the fraction.
-  number += index / length;
-
-  // Calculate the leftover index after accounting for the whole number part from the fraction.
-  index %= length;
-
-  return [number, index, length];
+  return epochLike;
 }
 
 /**
@@ -134,29 +242,3 @@ export function epochNormalize(e: ccc.Epoch): ccc.Epoch {
  * 4 hours * 60 minutes per hour * 60 seconds per minute * 1000 milliseconds per second.
  */
 const epochInMilliseconds = 14400000n;
-
-/**
- * Converts an epoch to a Unix timestamp relative to a reference block header.
- *
- * This function computes the difference between the provided epoch and the reference epoch,
- * multiplies the resulting difference (both whole number and fractional parts) by the epoch duration,
- * and then adds the result to the reference timestamp.
- *
- * @param epoch - The epoch to convert.
- * @param reference - The reference block header containing the reference epoch and its timestamp.
- * @returns The Unix timestamp (as bigint) corresponding to the given epoch.
- */
-export function epochToTimestamp(
-  epoch: ccc.Epoch,
-  reference: ccc.ClientBlockHeader,
-): bigint {
-  // Calculate the difference between the provided epoch and the reference epoch
-  // by subtracting the reference epoch from the provided epoch.
-  const [number, index, length] = epochSub(epoch, reference.epoch);
-
-  return (
-    reference.timestamp +
-    epochInMilliseconds * number +
-    (epochInMilliseconds * index) / length
-  );
-}

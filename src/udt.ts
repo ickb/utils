@@ -99,7 +99,7 @@ export class UdtManager implements UdtHandler {
         // Input is an UDT
         return acc + ccc.udtBalanceFrom(outputData);
       },
-      ccc.Zero,
+      0n,
     );
   }
 
@@ -115,7 +115,7 @@ export class UdtManager implements UdtHandler {
       }
 
       return acc + ccc.udtBalanceFrom(tx.outputsData[i] ?? "0x");
-    }, ccc.Zero);
+    }, 0n);
   }
 
   /**

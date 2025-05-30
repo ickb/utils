@@ -195,7 +195,7 @@ export class SmartTransaction extends ccc.Transaction {
           ccc.calcDaoProfit(cell.capacityFree, depositHeader, withdrawHeader)
         );
       },
-      ccc.Zero,
+      0n,
     );
   }
 

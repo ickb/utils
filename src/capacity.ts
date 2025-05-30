@@ -154,7 +154,7 @@ export class CapacityManager {
         yield {
           cell,
           ckbValue: cell.cellOutput.capacity,
-          udtValue: ccc.Zero,
+          udtValue: 0n,
           [isCapacitySymbol]: true,
         };
       }
