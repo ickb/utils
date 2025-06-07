@@ -95,37 +95,60 @@ export class CapacityManager {
   }
 
   /**
-   * Finds Capacity cells using the provided client, locks, and options.
+   * Async generator that finds and yields capacity-only cells matching the given lock scripts.
    *
-   * @param client - The client used to interact with the blockchain.
-   * @param locks - An array of lock scripts specifying the criteria for fetching cells.
-   * @param options - Optional parameters for the search.
-   *                  - onChain: If true, cells are searched on chain; otherwise, cached cells are returned first.
-   * @yields CapacityCell objects that satisfy the criteria.
+   * @param client
+   *   A CKB client instance providing two methods:
+   *   - `findCells(query, order, limit)` for cached searches
+   *   - `findCellsOnChain(query, order, limit)` for on-chain searches
+   *
+   * @param locks
+   *   An array of lock scripts. Only cells whose `cellOutput.lock` matches one of these
+   *   scripts exactly will be considered.
+   *
+   * @param options
+   *   Optional parameters to control the search behavior:
+   *   - `onChain?: boolean`
+   *       If `true`, queries the chain directly via `findCellsOnChain`.
+   *       Otherwise, uses local cache via `findCells` first. Default: `false`.
+   *   - `limit?: number`
+   *       Maximum number of cells to fetch per lock script in each batch.
+   *       Defaults to the constant `defaultFindCellsLimit` (400).
+   *
+   * @yields
+   *   {@link CapacityCell} objects for each valid capacity-only cell found.
    *
    * @remarks
-   * For each unique lock script provided:
-   *  - The method uses the client's cell finding capability (either on chain or cached) with a filter that includes:
-   *      - A script length criteria (specified as [0n, 1n]).
-   *      - The output data length range (if provided).
-   *  - Each found cell is validated:
-   *      - If the cell has a defined type in its output, it is immediately disqualified.
-   *      - If the cell's output data length meets the configured criteria and the cell’s lock script equals the provided lock,
-   *        it is yielded as a valid CapacityCell.
-   *
-   * Note: The number "400" is used as a limit to align with a particular pull request on the Nervos CKB repository
-   * (https://github.com/nervosnetwork/ckb/pull/4576).
+   * - Deduplicates `locks` via `unique(locks)` to avoid redundant queries.
+   * - Applies an RPC filter:
+   *     • `scriptLenRange: [0n, 1n]`
+   *     • `outputDataLenRange: this.outputDataLenRange`
+   * - Skips any cell that:
+   *     1. Has a non-null type script
+   *     2. Fails the data-length filter
+   *     3. Whose lock script does not exactly match the queried `lock`
+   * - Each yielded `CapacityCell` contains:
+   *     • `cell`: original cell data with status
+   *     • `ckbValue`: capacity in shannons
+   *     • `udtValue`: always `0n` (no UDT on capacity-only cells)
+   *     • a hidden `[isCapacitySymbol]: true` marker
    */
   async *findCapacities(
     client: ccc.Client,
     locks: ccc.Script[],
     options?: {
       /**
-       * Whether to search for cells directly on chain or return cached ones first.
+       * If true, fetch cells directly from the chain RPC. Otherwise, use cached results.
+       * @default false
        */
       onChain?: boolean;
+      /**
+       * Batch size per lock script. Defaults to {@link defaultFindCellsLimit}.
+       */
+      limit?: number;
     },
   ): AsyncGenerator<CapacityCell> {
+    const limit = options?.limit ?? defaultFindCellsLimit;
     // Loop through each unique lock script.
     for (const lock of unique(locks)) {
       const findCellsArgs = [
@@ -140,7 +163,7 @@ export class CapacityManager {
           withData: true,
         },
         "asc",
-        400, // See: https://github.com/nervosnetwork/ckb/pull/4576
+        limit,
       ] as const;
 
       // Depending on options, choose the correct client function to find cells.
@@ -183,3 +206,16 @@ export interface CapacityCell extends ValueComponents {
    */
   [isCapacitySymbol]: true;
 }
+
+/**
+ * The default upper limit on the number of cells to return when querying the chain.
+ *
+ * This limit is aligned with Nervos CKB’s pull request #4576
+ * (https://github.com/nervosnetwork/ckb/pull/4576) to avoid excessive paging.
+ *
+ * @remarks
+ * When searching for capacity-only cells, callers may override this limit
+ * by passing a custom `limit` in their options. If no override is provided,
+ * this constant controls how many cells will be fetched in a single batch.
+ */
+export const defaultFindCellsLimit = 400;

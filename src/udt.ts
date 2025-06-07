@@ -1,6 +1,7 @@
 import { ccc } from "@ckb-ccc/core";
 import { unique, type ScriptDeps, type ValueComponents } from "./utils.js";
 import type { SmartTransaction } from "./transaction.js";
+import { defaultFindCellsLimit } from "./capacity.js";
 
 /**
  * Interface representing a handler for User Defined Tokens (UDTs).
@@ -137,19 +138,58 @@ export class UdtManager implements UdtHandler {
   }
 
   /**
-   * Finds UDT cells based on the provided locks and options.
-   * @param client - The client used to interact with the blockchain.
-   * @param locks - An array of scripts to lock the cells.
-   * @param options - Optional parameters for the search.
-   * @returns {AsyncGenerator<UdtCell>} An async generator that yields UDT cells.
+   * Async generator that finds and yields UDT (User‐Defined Token) cells matching the given lock scripts.
+   *
+   * @param client
+   *   A CKB client instance providing:
+   *   - `findCells(query, order, limit)` for cached searches
+   *   - `findCellsOnChain(query, order, limit)` for on-chain searches
+   *
+   * @param locks
+   *   An array of lock scripts. Only cells whose `cellOutput.lock` matches one of these
+   *   scripts exactly will be considered.
+   *
+   * @param options
+   *   Optional parameters to control the search behavior:
+   *   - `onChain?: boolean`
+   *       If `true`, queries the chain directly via `findCellsOnChain`.
+   *       Otherwise, uses local cache via `findCells`. Default: `false`.
+   *   - `limit?: number`
+   *       Maximum number of cells to fetch per lock script in each batch.
+   *       Defaults to `defaultFindCellsLimit` (400).
+   *
+   * @yields
+   *   {@link UdtCell} objects for each valid UDT cell found.
+   *
+   * @remarks
+   * - Deduplicates `locks` via `unique(locks)` to avoid redundant queries.
+   * - Applies an RPC filter:
+   *     • `script: this.script` (the UDT type script)
+   * - Skips any cell that:
+   *     1. Does not pass `this.isUdt(cell)`
+   *     2. Whose lock script does not exactly match the queried `lock`
+   * - Each yielded `UdtCell` contains:
+   *     • `cell`: original cell data with status
+   *     • `ckbValue`: capacity in shannons
+   *     • `udtValue`: token amount parsed via `ccc.udtBalanceFrom(cell.outputData)`
+   *     • a hidden `[isUdtSymbol]: true` marker
    */
   async *findUdts(
     client: ccc.Client,
     locks: ccc.Script[],
     options?: {
+      /**
+       * If true, fetch cells directly from the chain RPC. Otherwise, use cached results.
+       * @default false
+       */
       onChain?: boolean;
+      /**
+       * Batch size per lock script. Defaults to {@link defaultFindCellsLimit}.
+       */
+      limit?: number;
     },
   ): AsyncGenerator<UdtCell> {
+    const limit = options?.limit ?? defaultFindCellsLimit;
     for (const lock of unique(locks)) {
       const findCellsArgs = [
         {
@@ -162,7 +202,7 @@ export class UdtManager implements UdtHandler {
           withData: true,
         },
         "asc",
-        400, // https://github.com/nervosnetwork/ckb/pull/4576
+        limit,
       ] as const;
 
       for await (const cell of options?.onChain
