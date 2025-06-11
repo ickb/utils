@@ -88,7 +88,7 @@ export class CapacityManager {
    * @remarks
    * The method iterates over each CapacityCell and adds its underlying cell as an input to the transaction.
    */
-  static addCapacities(tx: SmartTransaction, capacities: CapacityCell[]): void {
+  addCapacities(tx: SmartTransaction, capacities: CapacityCell[]): void {
     for (const { cell } of capacities) {
       tx.addInput(cell);
     }
