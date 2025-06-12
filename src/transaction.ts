@@ -52,12 +52,11 @@ export class SmartTransaction extends ccc.Transaction {
    *
    * @param args - The parameters for the completeFee method, as defined by ccc.Transaction["completeFee"].
    * @returns A promise that resolves to a tuple:
-   *          [number, boolean] where the number is the quantity of added capacity cells and the boolean
-   *          indicates if an output capacity change cell was added.
+   *          [number, boolean] where the number is the quantity of added input cells and the boolean
+   *          indicates if an output change cell was added.
    *
    * The function will:
-   * - Add change cells for all the defined UDTs.
-   * - Verify that each UDT is balanced by re-checking the inputs.
+   * - Add change cells for all the defined UDTs using udtHandlers's completeUdt.
    * - Add capacity change cells via the superclass method.
    * - Enforce a condition on NervosDAO transactions to have at most 64 output cells.
    */
@@ -66,21 +65,20 @@ export class SmartTransaction extends ccc.Transaction {
   ): Promise<[number, boolean]> {
     const signer = args[0];
 
-    // Add change cells for all defined UDTs.
-    for (const { script: udt } of this.udtHandlers.values()) {
-      await this.completeInputsByUdt(signer, udt);
-    }
+    let inAdded = 0;
+    let addedChange = false;
 
-    // Double check that all UDTs are even out.
-    for (const { script: udt } of this.udtHandlers.values()) {
-      const addedCount = await this.completeInputsByUdt(signer, udt);
-      if (addedCount > 0) {
-        throw Error("UDT Handlers did not produce a balanced Transaction");
-      }
+    // Add change cells for all defined UDTs.
+    for (const handler of this.udtHandlers.values()) {
+      const res = await handler.completeUdt(signer, this);
+      inAdded += res[0];
+      addedChange ||= res[1];
     }
 
     // Add capacity change cells.
-    const res = super.completeFee(...args);
+    const res = await super.completeFee(...args);
+    inAdded += res[0];
+    addedChange ||= res[1];
 
     // Check that, if NervosDAO cells are included, then there are at most 64 output cells.
     // See: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0023-dao-deposit-withdraw/0023-dao-deposit-withdraw.md#gotchas
@@ -95,7 +93,7 @@ export class SmartTransaction extends ccc.Transaction {
       throw Error("More than 64 output cells in a NervosDAO transaction");
     }
 
-    return res;
+    return [inAdded, addedChange];
   }
 
   /**
@@ -114,7 +112,7 @@ export class SmartTransaction extends ccc.Transaction {
   ): Promise<ccc.FixedPoint> {
     const udt = ccc.Script.from(udtLike);
     return (
-      this.getUdtHandler(udt)?.getInputsUdtBalance?.(client, this) ??
+      this.getUdtHandler(udt)?.getInputsUdtBalance(client, this) ??
       super.getInputsUdtBalance(client, udt)
     );
   }
@@ -131,7 +129,7 @@ export class SmartTransaction extends ccc.Transaction {
   override getOutputsUdtBalance(udtLike: ccc.ScriptLike): ccc.FixedPoint {
     const udt = ccc.Script.from(udtLike);
     return (
-      this.getUdtHandler(udt)?.getOutputsUdtBalance?.(this) ??
+      this.getUdtHandler(udt)?.getOutputsUdtBalance(this) ??
       super.getOutputsUdtBalance(udt)
     );
   }
@@ -512,149 +510,4 @@ export interface TransactionHeader {
    * This property may be undefined if the transaction hash is not applicable.
    */
   txHash?: ccc.Hex;
-}
-
-/**
- * Retrieves the constructor parameters of a SmartTransaction instance.
- *
- * @param tx - The SmartTransaction instance from which to retrieve parameters.
- * @param shouldClone - A boolean indicating whether to clone the transaction before retrieving parameters.
- *                      If true, a shallow copy of the inputs is maintained separately and restored after cloning.
- * @returns An array of parameters corresponding to the SmartTransaction constructor.
- *
- * This helper method allows creating a new SmartTransaction instance by extracting the underlying parameters
- * from an existing transaction object.
- */
-function parametersOf(
-  tx: SmartTransaction,
-  shouldClone: boolean,
-): ConstructorParameters<typeof SmartTransaction> {
-  if (shouldClone) {
-    const inputs = [...tx.inputs];
-    tx = tx.clone();
-    tx.inputs = inputs;
-  }
-  return [
-    tx.version,
-    tx.cellDeps,
-    tx.headerDeps,
-    tx.inputs,
-    tx.outputs,
-    tx.outputsData,
-    tx.witnesses,
-    tx.udtHandlers,
-    tx.headers,
-  ];
-}
-
-/**
- * Class representing a restricted transaction that extends SmartTransaction.
- * This class overrides certain methods to modify the behavior of the transaction,
- * particularly in how inputs are handled and cloned:
- *
- * - It will never call client.findCell for additional cells, for example when using completeFee.
- * - It will always retain inputs metadata when cloning, so it will not refetch InputCells.
- *
- * Note on Use: Prefer SmartTransaction; use this class only to avoid client requests
- * and failing fast when trying out many transaction variations.
- *
- * Example:
- * ```typescript
- * await new RestrictedTransaction(tx).completeFeeBy(signer, feeRate);
- * ```
- */
-export class RestrictedTransaction extends SmartTransaction {
-  /**
-   * Creates an instance of RestrictedTransaction from a SmartTransaction.
-   *
-   * @param tx - The SmartTransaction instance used to create the RestrictedTransaction.
-   * @param shouldClone - Determines whether to clone the provided transaction.
-   *                      Defaults to true.
-   *
-   * The constructor forwards the parameters from the SmartTransaction (using a helper
-   * function such as parametersOf) to initialize the base SmartTransaction properties.
-   */
-  constructor(tx: SmartTransaction, shouldClone = true) {
-    super(...parametersOf(tx, shouldClone));
-  }
-
-  /**
-   * Creates a clone of the current RestrictedTransaction instance.
-   *
-   * @returns A new instance of RestrictedTransaction with the same properties as the original.
-   *
-   * This method preserves the input metadata and prevents refetching of InputCells when cloning.
-   */
-  override clone(): RestrictedTransaction {
-    return new RestrictedTransaction(this, true);
-  }
-
-  /**
-   * Overrides the completeInputs method to disable fetching additional cells.
-   *
-   * @param _0 - Unused parameter.
-   * @param _1 - Unused parameter.
-   * @param _2 - Unused parameter.
-   * @param init - The initial accumulated value returned as part of the result.
-   * @returns A promise that resolves to an object containing:
-   * - addedCount: always 0, indicating that no inputs were added.
-   * - accumulated: the initial accumulated value.
-   *
-   * This implementation intentionally disables completing inputs to avoid additional network requests.
-   */
-  // eslint-disable-next-line @typescript-eslint/require-await
-  override async completeInputs<T>(
-    _0: never,
-    _1: never,
-    _2: never,
-    init: T,
-  ): Promise<{ addedCount: number; accumulated?: T }> {
-    // Disable completeInputs, so it will not fetch additional cells
-    return {
-      addedCount: 0,
-      accumulated: init,
-    };
-  }
-
-  // Reimplement the rest of transformations where a new instance is created.
-
-  /**
-   * Creates a default instance of RestrictedTransaction.
-   *
-   * @returns A new instance of RestrictedTransaction with default values.
-   *
-   * The default instance is created based on the base default SmartTransaction,
-   * with the additional RestrictedTransaction behavior.
-   */
-  static override default(): RestrictedTransaction {
-    return new RestrictedTransaction(super.default(), false);
-  }
-
-  /**
-   * Creates a RestrictedTransaction from a Lumos transaction skeleton.
-   *
-   * @param skeleton - The LumosTransactionSkeletonType used to create the transaction.
-   * @returns A new instance of RestrictedTransaction converted from the provided skeleton.
-   *
-   * This method converts a Lumos skeleton into a SmartTransaction using the base class method,
-   * then wraps it into a RestrictedTransaction.
-   */
-  static override fromLumosSkeleton(
-    skeleton: ccc.LumosTransactionSkeletonType,
-  ): RestrictedTransaction {
-    return new RestrictedTransaction(super.fromLumosSkeleton(skeleton), false);
-  }
-
-  /**
-   * Creates a RestrictedTransaction from a transaction-like object.
-   *
-   * @param txLike - The transaction-like object used to create the RestrictedTransaction.
-   * @returns A new instance of RestrictedTransaction constructed from the provided object.
-   *
-   * This method first converts the input transaction-like object into a SmartTransaction (if not already one)
-   * and then wraps it into a RestrictedTransaction.
-   */
-  static override from(txLike: SmartTransactionLike): RestrictedTransaction {
-    return new RestrictedTransaction(SmartTransaction.from(txLike), false);
-  }
 }

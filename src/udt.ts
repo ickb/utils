@@ -1,5 +1,11 @@
-import { ccc } from "@ckb-ccc/core";
-import { unique, type ScriptDeps, type ValueComponents } from "./utils.js";
+import { ccc, mol } from "@ckb-ccc/core";
+import {
+  collect,
+  sum,
+  unique,
+  type ScriptDeps,
+  type ValueComponents,
+} from "./utils.js";
 import type { SmartTransaction } from "./transaction.js";
 import { defaultFindCellsLimit } from "./capacity.js";
 
@@ -15,7 +21,7 @@ export interface UdtHandler extends ScriptDeps {
    * @param {SmartTransaction} tx - The transaction for which to retrieve the UDT input balance.
    * @returns {Promise<ccc.FixedPoint>} A promise that resolves to the balance of UDT inputs.
    */
-  getInputsUdtBalance?: (
+  getInputsUdtBalance: (
     client: ccc.Client,
     tx: SmartTransaction,
   ) => Promise<ccc.FixedPoint>;
@@ -25,7 +31,21 @@ export interface UdtHandler extends ScriptDeps {
    * @param {SmartTransaction} tx - The transaction for which to retrieve the UDT output balance.
    * @returns {ccc.FixedPoint} The balance of UDT outputs.
    */
-  getOutputsUdtBalance?: (tx: SmartTransaction) => ccc.FixedPoint;
+  getOutputsUdtBalance: (tx: SmartTransaction) => ccc.FixedPoint;
+
+  /**
+   * Adjusts a SmartTransaction by collecting and adding UDT change if needed.
+   * @param {ccc.Signer} signer - Signer carrying client & address info.
+   * @param {SmartTransaction} tx - Transaction to complete.
+   * @returns A tuple [number of added UDT inputs, whether change output was added].
+   */
+  completeUdt: (
+    signer: ccc.Signer,
+    tx: SmartTransaction,
+  ) => Promise<[number, boolean]>;
+
+  /** Number of decimals for this UDT (Default: 8). */
+  udtDecimals: number;
 }
 
 /**
@@ -34,27 +54,30 @@ export interface UdtHandler extends ScriptDeps {
  */
 export class UdtManager implements UdtHandler {
   /**
-   * Creates an instance of UdtManager.
-   * @param script - The script associated with the UDT.
-   * @param cellDeps - An array of cell dependencies.
+   * @param script - The UDT type script.
+   * @param cellDeps - Cell deps required by the UDT script.
+   * @param udtDecimals - Decimal precision of the UDT.
    */
   constructor(
     public readonly script: ccc.Script,
     public readonly cellDeps: ccc.CellDep[],
+    public readonly udtDecimals: number,
   ) {}
 
   /**
    * Creates an instance of UdtManager from script dependencies.
    * @param deps - The script dependencies.
    * @param deps.udt - The script dependencies for UDT.
+   * @param udtDecimals - Decimal precision.
    * @returns An instance of UdtManager.
    */
   static fromDeps(
     { udt }: { udt: ScriptDeps },
+    udtDecimals: number,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     ..._: never[]
   ): UdtManager {
-    return new UdtManager(udt.script, udt.cellDeps);
+    return new UdtManager(udt.script, udt.cellDeps, udtDecimals);
   }
 
   /**
@@ -117,6 +140,52 @@ export class UdtManager implements UdtHandler {
 
       return acc + ccc.udtBalanceFrom(tx.outputsData[i] ?? "0x");
     }, 0n);
+  }
+
+  /**
+   * Adjusts a SmartTransaction by collecting and adding UDT change if needed.
+   * If additional input UDTs are required, this method will greedily add all udt cells to compress state rent.
+   * @param {ccc.Signer} signer - Signer carrying client & address info.
+   * @param {SmartTransaction} tx - Transaction to complete.
+   * @returns A tuple [number of added UDT inputs, whether change output was added].
+   */
+  async completeUdt(
+    signer: ccc.Signer,
+    tx: SmartTransaction,
+  ): Promise<[number, boolean]> {
+    const client = signer.client;
+    const inUdt = await this.getInputsUdtBalance(client, tx);
+    let outUdt = this.getOutputsUdtBalance(tx);
+    let inAdded = 0;
+
+    if (inUdt < outUdt) {
+      const locks = (await signer.getAddressObjs()).map((a) => a.script);
+      const udts = await collect(this.findUdts(client, locks));
+      // Greedily add all UDTs to compress state rent
+      this.addUdts(tx, udts);
+      outUdt += sum(0n, ...udts.map((u) => u.udtValue));
+      inAdded = udts.length;
+    }
+
+    if (inUdt < outUdt) {
+      throw Error(
+        `Insufficient coin, need ${ccc.fixedPointToString(outUdt - inUdt, this.udtDecimals)} extra coin`,
+      );
+    }
+
+    if (inUdt === outUdt) {
+      return [inAdded, false];
+    }
+
+    tx.addOutput(
+      {
+        lock: (await signer.getRecommendedAddressObj()).script,
+        type: this.script,
+      },
+      mol.Uint128LE.encode(inUdt - outUdt),
+    );
+
+    return [inAdded, true];
   }
 
   /**
