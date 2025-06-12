@@ -201,16 +201,16 @@ export async function asyncBinarySearch(
 }
 
 /**
- * Converts an asynchronous generator into an array.
+ * Converts an asynchronous iterable into an array.
  *
- * This function takes an `AsyncGenerator<T>` as input and returns a promise that resolves
- * to an array containing all the elements yielded by the generator.
+ * This function takes an `AsyncIterable<T>` as input and returns a promise that resolves
+ * to an array containing all the elements yielded by the iterable.
  *
- * @template T - The type of elements in the input generator.
- * @param {AsyncGenerator<T>} inputs - The asynchronous generator to convert into an array.
+ * @template T - The type of elements in the input iterable.
+ * @param {AsyncIterable<T>} inputs - The asynchronous iterable to convert into an array.
  * @returns {Promise<T[]>} A promise that resolves to an array of elements.
  */
-export async function collect<T>(inputs: AsyncGenerator<T>): Promise<T[]> {
+export async function collect<T>(inputs: AsyncIterable<T>): Promise<T[]> {
   const res = [];
   for await (const i of inputs) {
     res.push(i);
