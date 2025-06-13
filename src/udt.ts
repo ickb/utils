@@ -65,22 +65,6 @@ export class UdtManager implements UdtHandler {
   ) {}
 
   /**
-   * Creates an instance of UdtManager from script dependencies.
-   * @param deps - The script dependencies.
-   * @param deps.udt - The script dependencies for UDT.
-   * @param udtDecimals - Decimal precision.
-   * @returns An instance of UdtManager.
-   */
-  static fromDeps(
-    { udt }: { udt: ScriptDeps },
-    udtDecimals: number,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    ..._: never[]
-  ): UdtManager {
-    return new UdtManager(udt.script, udt.cellDeps, udtDecimals);
-  }
-
-  /**
    * Checks if a cell is a User Defined Token (UDT).
    * @param cell - The cell to check.
    * @returns {boolean} True if the cell is a UDT, false otherwise.
