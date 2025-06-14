@@ -64,13 +64,14 @@ export class SmartTransaction extends ccc.Transaction {
     ...args: Parameters<ccc.Transaction["completeFee"]>
   ): Promise<[number, boolean]> {
     const signer = args[0];
+    const options = args[4];
 
     let inAdded = 0;
     let addedChange = false;
 
     // Add change cells for all defined UDTs.
     for (const handler of this.udtHandlers.values()) {
-      const res = await handler.completeUdt(signer, this);
+      const res = await handler.completeUdt(signer, this, options);
       inAdded += res[0];
       addedChange ||= res[1];
     }
@@ -112,8 +113,9 @@ export class SmartTransaction extends ccc.Transaction {
   ): Promise<ccc.FixedPoint> {
     const udt = ccc.Script.from(udtLike);
     return (
-      this.getUdtHandler(udt)?.getInputsUdtBalance(client, this) ??
-      super.getInputsUdtBalance(client, udt)
+      this.getUdtHandler(udt)
+        ?.getInputsUdtBalance(client, this)
+        .then((b) => b[0]) ?? super.getInputsUdtBalance(client, udt)
     );
   }
 
@@ -129,7 +131,7 @@ export class SmartTransaction extends ccc.Transaction {
   override getOutputsUdtBalance(udtLike: ccc.ScriptLike): ccc.FixedPoint {
     const udt = ccc.Script.from(udtLike);
     return (
-      this.getUdtHandler(udt)?.getOutputsUdtBalance(this) ??
+      this.getUdtHandler(udt)?.getOutputsUdtBalance(this)[0] ??
       super.getOutputsUdtBalance(udt)
     );
   }

@@ -1,6 +1,6 @@
 {
   "name": "@ickb/utils",
-  "version": "1000.0.81",
+  "version": "1000.0.82",
   "description": "General utilities built on top of CCC",
   "keywords": [
     "ickb",
@@ -34,7 +34,7 @@
   "scripts": {
     "prepare": "tsc",
     "lint": "eslint ./src",
-    "clean": "rm -fr pnpm-lock.yaml .tsbuildinfo dist/*",
+    "clean": "rm -fr pnpm-lock.yaml dist/*",
     "revamp": "pnpm clean; pnpm up && node dist/index.js && pnpm lint"
   },
   "files": [
@@ -46,13 +46,13 @@
     "provenance": true
   },
   "devDependencies": {
-    "@eslint/js": "^9.28.0",
-    "eslint": "^9.28.0",
+    "@eslint/js": "^9.29.0",
+    "eslint": "^9.29.0",
     "prettier": "^3.5.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.34.0"
   },
   "dependencies": {
-    "@ckb-ccc/core": "^1.9.0"
+    "@ckb-ccc/core": "canary"
   }
 }

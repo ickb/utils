@@ -1,73 +1,125 @@
 import { ccc, mol } from "@ckb-ccc/core";
-import {
-  collect,
-  sum,
-  unique,
-  type ScriptDeps,
-  type ValueComponents,
-} from "./utils.js";
+import { unique, type ScriptDeps, type ValueComponents } from "./utils.js";
 import type { SmartTransaction } from "./transaction.js";
 import { defaultFindCellsLimit } from "./capacity.js";
 
 /**
  * Interface representing a handler for User Defined Tokens (UDTs).
- * This interface extends the ScriptDeps interface, meaning it also includes
- * the properties defined in ScriptDeps: `script` and `cellDeps`.
+ * Extends the ScriptDeps interface to include `script` and `cellDeps`.
  */
 export interface UdtHandler extends ScriptDeps {
   /**
-   * Asynchronously retrieves the balance of UDT inputs for a given transaction.
-   * @param {ccc.Client} client - The client used to interact with the blockchain.
-   * @param {SmartTransaction} tx - The transaction for which to retrieve the UDT input balance.
-   * @returns {Promise<ccc.FixedPoint>} A promise that resolves to the balance of UDT inputs.
+   * Asynchronously retrieves the UDT input balance (token amount and capacity)
+   * for a given transaction.
+   *
+   * @param client - The CKB client to query cell data.
+   * @param tx - The smart transaction whose inputs are to be balanced.
+   * @returns A promise resolving to a tuple:
+   *   - [0]: Total UDT amount in inputs (as `ccc.FixedPoint`).
+   *   - [1]: Total capacity in UDT inputs (as `ccc.FixedPoint`).
    */
-  getInputsUdtBalance: (
+  getInputsUdtBalance(
     client: ccc.Client,
     tx: SmartTransaction,
-  ) => Promise<ccc.FixedPoint>;
+  ): Promise<[ccc.FixedPoint, ccc.FixedPoint]>;
 
   /**
-   * Retrieves the balance of UDT outputs for a given transaction.
-   * @param {SmartTransaction} tx - The transaction for which to retrieve the UDT output balance.
-   * @returns {ccc.FixedPoint} The balance of UDT outputs.
+   * Retrieves the UDT output balance (token amount and capacity)
+   * for a given transaction.
+   *
+   * @param tx - The smart transaction whose outputs are to be balanced.
+   * @returns A tuple:
+   *   - [0]: Total UDT amount in outputs (as `ccc.FixedPoint`).
+   *   - [1]: Total capacity in UDT outputs (as `ccc.FixedPoint`).
    */
-  getOutputsUdtBalance: (tx: SmartTransaction) => ccc.FixedPoint;
+  getOutputsUdtBalance(tx: SmartTransaction): [ccc.FixedPoint, ccc.FixedPoint];
 
   /**
-   * Adjusts a SmartTransaction by collecting and adding UDT change if needed.
-   * @param {ccc.Signer} signer - Signer carrying client & address info.
-   * @param {SmartTransaction} tx - Transaction to complete.
-   * @returns A tuple [number of added UDT inputs, whether change output was added].
+   * Completes a transaction by adding UDT inputs and/or UDT change outputs as needed.
+   *
+   * @param signer - Signer providing client access and account scripts.
+   * @param tx - The smart transaction to adjust.
+   * @param options.shouldAddInputs - Whether to add inputs if insufficient. Defaults to `true`.
+   * @param options.compressState - Whether to collect all UDT cells to compress state rent. Defaults to `false`.
+   * @returns A promise resolving to a tuple:
+   *   - [0]: Number of UDT inputs added.
+   *   - [1]: `true` if a UDT change output was appended; otherwise `false`.
    */
-  completeUdt: (
+  completeUdt(
     signer: ccc.Signer,
     tx: SmartTransaction,
-  ) => Promise<[number, boolean]>;
+    options?: {
+      shouldAddInputs?: boolean;
+      compressState?: boolean;
+    },
+  ): Promise<[number, boolean]>;
 
-  /** Number of decimals for this UDT (Default: 8). */
-  udtDecimals: number;
+  /** The canonical name of the UDT. */
+  name: string;
+
+  /** The ticker or symbol of the UDT. */
+  symbol: string;
+
+  /** The number of decimal places of precision for the UDT. */
+  decimals: number;
 }
 
 /**
- * UdtManager is a class that implements the UdtHandler interface.
- * It is responsible for handling UDT (User Defined Token) operations.
+ * Error thrown when a transaction has insufficient UDT balance.
+ * Extends the CKB core `ErrorTransactionInsufficientCoin` by including token symbol
+ * and decimal precision in the error message.
+ *
+ * UDT Handler implementer should use this error class where appropriate.
+ */
+export class ErrorTransactionInsufficientCoin extends ccc.ErrorTransactionInsufficientCoin {
+  /**
+   * @param amount - The additional amount required (in fixed-point).
+   * @param type - The UDT type script.
+   * @param symbol - Token symbol (e.g., "USDT").
+   * @param decimals - Decimal precision of the token.
+   */
+  constructor(
+    amount: ccc.Num,
+    type: ccc.Script,
+    public readonly symbol: string,
+    public readonly decimals: number,
+  ) {
+    super(amount, type);
+    this.message = `Insufficient coin, need ${ccc.fixedPointToString(
+      amount,
+      decimals,
+    )} extra ${symbol} coin`;
+  }
+}
+
+/**
+ * UdtManager implements UdtHandler for managing UDT operations:
+ * - Detecting UDT cells
+ * - Computing input/output balances
+ * - Adding inputs or change outputs to meet desired UDT amounts
  */
 export class UdtManager implements UdtHandler {
   /**
    * @param script - The UDT type script.
-   * @param cellDeps - Cell deps required by the UDT script.
-   * @param udtDecimals - Decimal precision of the UDT.
+   * @param cellDeps - Cell dependencies required to use the UDT script.
+   * @param name - The token's full name.
+   * @param symbol - The token's symbol or ticker.
+   * @param decimals - Decimal precision for token amounts.
    */
   constructor(
     public readonly script: ccc.Script,
     public readonly cellDeps: ccc.CellDep[],
-    public readonly udtDecimals: number,
+    public readonly name: string,
+    public readonly symbol: string,
+    public readonly decimals: number,
   ) {}
 
   /**
-   * Checks if a cell is a User Defined Token (UDT).
-   * @param cell - The cell to check.
-   * @returns {boolean} True if the cell is a UDT, false otherwise.
+   * Determines whether a cell contains this UDT.
+   *
+   * @param cell - The cell to inspect.
+   * @returns `true` if the cell's type script equals `this.script` and
+   *          its data length indicates a UDT; otherwise `false`.
    */
   isUdt(cell: ccc.Cell): boolean {
     return (
@@ -77,15 +129,19 @@ export class UdtManager implements UdtHandler {
   }
 
   /**
-   * Retrieves the UDT balance of inputs in a transaction.
-   * @param tx - The smart transaction containing the inputs.
-   * @param client - The client used to interact with the blockchain.
-   * @returns {Promise<ccc.FixedPoint>} A promise that resolves to the total UDT balance of the inputs.
+   * Asynchronously retrieves the UDT input balance (token amount and capacity)
+   * for a given transaction.
+   *
+   * @param client - The CKB client to query cell data.
+   * @param tx - The smart transaction whose inputs are to be balanced.
+   * @returns A promise resolving to a tuple:
+   *   - [0]: Total UDT amount in inputs (as `ccc.FixedPoint`).
+   *   - [1]: Total capacity in UDT inputs (as `ccc.FixedPoint`).
    */
   getInputsUdtBalance(
     client: ccc.Client,
     tx: SmartTransaction,
-  ): Promise<ccc.FixedPoint> {
+  ): Promise<[ccc.FixedPoint, ccc.FixedPoint]> {
     return ccc.reduceAsync(
       tx.inputs,
       async (acc, input) => {
@@ -105,55 +161,91 @@ export class UdtManager implements UdtHandler {
         }
 
         // Input is an UDT
-        return acc + ccc.udtBalanceFrom(outputData);
+        const [udtValue, capacity] = acc;
+        return [
+          udtValue + ccc.udtBalanceFrom(outputData),
+          capacity + cell.cellOutput.capacity,
+        ];
       },
-      0n,
+      [0n, 0n],
     );
   }
 
   /**
-   * Retrieves the UDT balance of outputs in a transaction.
-   * @param tx - The smart transaction containing the outputs.
-   * @returns {ccc.Num} The total UDT balance of the outputs.
+   * Retrieves the UDT output balance (token amount and capacity)
+   * for a given transaction.
+   *
+   * @param tx - The smart transaction whose outputs are to be balanced.
+   * @returns A tuple:
+   *   - [0]: Total UDT amount in outputs (as `ccc.FixedPoint`).
+   *   - [1]: Total capacity in UDT outputs (as `ccc.FixedPoint`).
    */
-  getOutputsUdtBalance(tx: SmartTransaction): ccc.Num {
-    return tx.outputs.reduce((acc, output, i) => {
-      if (!output.type?.eq(this.script)) {
-        return acc;
-      }
+  getOutputsUdtBalance(tx: SmartTransaction): [ccc.FixedPoint, ccc.FixedPoint] {
+    return tx.outputs.reduce(
+      (acc, output, i) => {
+        if (!output.type?.eq(this.script)) {
+          return acc;
+        }
 
-      return acc + ccc.udtBalanceFrom(tx.outputsData[i] ?? "0x");
-    }, 0n);
+        // Input is an UDT
+        const [udtValue, capacity] = acc;
+        return [
+          udtValue + ccc.udtBalanceFrom(tx.outputsData[i] ?? "0x"),
+          capacity + output.capacity,
+        ];
+      },
+      [0n, 0n],
+    );
   }
 
   /**
-   * Adjusts a SmartTransaction by collecting and adding UDT change if needed.
-   * If additional input UDTs are required, this method will greedily add all udt cells to compress state rent.
-   * @param {ccc.Signer} signer - Signer carrying client & address info.
-   * @param {SmartTransaction} tx - Transaction to complete.
-   * @returns A tuple [number of added UDT inputs, whether change output was added].
+   * Completes a transaction by adding UDT inputs and/or UDT change outputs as needed.
+   *
+   * @param signer - Signer providing client access and account scripts.
+   * @param tx - The smart transaction to adjust.
+   * @param options.shouldAddInputs - Whether to add inputs if insufficient. Defaults to `true`.
+   * @param options.compressState - Whether to collect all UDT cells to compress state rent. Defaults to `false`.
+   * @returns A promise resolving to a tuple:
+   *   - [0]: Number of UDT inputs added.
+   *   - [1]: `true` if a UDT change output was appended; otherwise `false`.
    */
   async completeUdt(
     signer: ccc.Signer,
     tx: SmartTransaction,
+    options?: {
+      shouldAddInputs?: boolean;
+      compressState?: boolean;
+    },
   ): Promise<[number, boolean]> {
     const client = signer.client;
-    const inUdt = await this.getInputsUdtBalance(client, tx);
-    let outUdt = this.getOutputsUdtBalance(tx);
+    let [inUdt, inCapacity] = await this.getInputsUdtBalance(client, tx);
+    const [outUdt, outCapacity] = this.getOutputsUdtBalance(tx);
     let inAdded = 0;
-
-    if (inUdt < outUdt) {
+    if (
+      (inUdt < outUdt || inCapacity < outCapacity) &&
+      (options?.shouldAddInputs ?? true)
+    ) {
+      const compressState = options?.compressState ?? false;
       const locks = (await signer.getAddressObjs()).map((a) => a.script);
-      const udts = await collect(this.findUdts(client, locks));
-      // Greedily add all UDTs to compress state rent
+      const udts = [];
+      for await (const cell of this.findUdts(client, locks)) {
+        udts.push(cell);
+        inUdt += cell.udtValue;
+        inCapacity += cell.ckbValue;
+        if (!compressState && inUdt >= outUdt && inCapacity >= outCapacity) {
+          break;
+        }
+      }
       this.addUdts(tx, udts);
-      outUdt += sum(0n, ...udts.map((u) => u.udtValue));
       inAdded = udts.length;
     }
 
     if (inUdt < outUdt) {
-      throw Error(
-        `Insufficient coin, need ${ccc.fixedPointToString(outUdt - inUdt, this.udtDecimals)} extra coin`,
+      throw new ErrorTransactionInsufficientCoin(
+        outUdt - inUdt,
+        this.script,
+        this.symbol,
+        this.decimals,
       );
     }
 
